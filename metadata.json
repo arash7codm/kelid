@@ -1,0 +1,12 @@
+{
+  "name": "کلید — سامانه هوشمند مدیریت املاک و سرمایه‌گذاری",
+  "description": "سامانه جامع CRM، بایگانی املاک لوکس، تطبیق هوشمند متقاضیان، شبکه همکاران و دستیار صوتی مشاورین املاک شمال کشور",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

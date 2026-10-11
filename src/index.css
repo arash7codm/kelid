@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --motion-fast: 150ms;
+    --motion-base: 250ms;
+    --motion-slow: 350ms;
+    --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  *, html, body, button, input, select, textarea {
+    font-family: 'Vazirmatn', 'Plus Jakarta Sans', sans-serif;
+  }
+
+  html, body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #050b17;
+    color: #dae2ff;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined' !important;
+    user-select: none;
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Stitch Color & Utility Classes */
+.text-primary { color: #f1cb83; }
+.bg-primary { background-color: #f1cb83; }
+.border-primary { border-color: #f1cb83; }
+.text-on-primary { color: #261900; }
+.text-secondary { color: #38bdf8; }
+.text-tertiary { color: #f4cb7f; }
+.text-error { color: #ffb4ab; }
+.bg-error { background-color: #ef4444; }
+.text-on-surface { color: #dae2ff; }
+.text-on-surface-variant { color: #d1c5b4; }
+
+/* 1. Living Glass Ambient Background Drift (20-40s smooth transform-only loops, max 3 moving layers) */
+@keyframes ambientDrift1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.45; }
+  50% { transform: translate3d(24px, -36px, 0) scale(1.08); opacity: 0.7; }
+}
+@keyframes ambientDrift2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.35; }
+  50% { transform: translate3d(-28px, 32px, 0) scale(1.1); opacity: 0.6; }
+}
+@keyframes ambientDrift3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.96); opacity: 0.3; }
+  50% { transform: translate3d(18px, -45px, 0) scale(1.05); opacity: 0.55; }
+}
+
+.ambient-layer-1 {
+  animation: ambientDrift1 26s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.ambient-layer-2 {
+  animation: ambientDrift2 32s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.ambient-layer-3 {
+  animation: ambientDrift3 38s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* 2. Crystal Glass & Budget-Conscious Blur (<= 12px radius with @supports fallback) */
+.crystal-glass, .glass-card, .living-glass-panel {
+  position: relative;
+  background: rgba(16, 25, 46, 0.76);
+  border: 1px solid rgba(241, 203, 131, 0.22);
+  box-shadow: 0 10px 32px -4px rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  transition: transform var(--motion-base) var(--ease-enter), border-color var(--motion-base) ease;
+}
+
+@supports ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+  html:not(.reduced-glass-mode) .crystal-glass,
+  html:not(.reduced-glass-mode) .glass-card,
+  html:not(.reduced-glass-mode) .living-glass-panel {
+    background: rgba(16, 25, 46, 0.56);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+}
+
+.crystal-glass-subtle, .crystal-sub-glass, .glass-field {
+  background: rgba(9, 16, 34, 0.72);
+  border: 1px solid rgba(241, 203, 131, 0.18);
+  transition: transform var(--motion-fast) var(--ease-enter), border-color var(--motion-fast) ease;
+}
+
+.crystal-glass-inner {
+  position: relative;
+  background: rgba(8, 14, 28, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform var(--motion-fast) var(--ease-enter), border-color var(--motion-fast) ease;
+}
+
+/* 3. One-Shot Scheduled Sheen Sweep & Moving Rim Light */
+@keyframes oneShotSheenSweep {
+  0% {
+    transform: translate3d(160%, -20%, 0) rotate(20deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.75;
+  }
+  80% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate3d(-160%, 20%, 0) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+@keyframes oneShotRimShift {
+  0% {
+    transform: translate3d(100%, 0, 0);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(-100%, 0, 0);
+    opacity: 0;
+  }
+}
+
+.glass-sweep-active::after {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -40%;
+  width: 180%;
+  height: 180%;
+  background: linear-gradient(
+    110deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.14) 47%,
+    rgba(241, 203, 131, 0.28) 50%,
+    rgba(255, 255, 255, 0.12) 53%,
+    transparent 62%
+  );
+  pointer-events: none;
+  z-index: 2;
+  animation: oneShotSheenSweep var(--sweep-duration, 1500ms) var(--ease-enter) forwards;
+}
+
+.glass-sweep-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgba(255, 235, 185, 0.85), #f1cb83, transparent);
+  pointer-events: none;
+  z-index: 3;
+  animation: oneShotRimShift var(--sweep-duration, 1500ms) var(--ease-enter) forwards;
+}
+
+/* Tactile Press & Gold Glow on Tappable Controls */
+button:active, a:active, .tappable:active {
+  transform: scale(0.97);
+}
+
+/* Direction-Aware Page Transitions */
+@keyframes pageEnterForward {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes pageEnterTab {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes sheetEnterUp {
+  from { opacity: 0; transform: translate3d(0, 28px, 0) scale(0.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes toastSlideTop {
+  from { opacity: 0; transform: translate3d(-50%, -20px, 0); }
+  to { opacity: 1; transform: translate3d(-50%, 0, 0); }
+}
+
+.page-enter-forward {
+  animation: pageEnterForward var(--motion-base) var(--ease-enter) both;
+}
+.page-enter-tab {
+  animation: pageEnterTab var(--motion-base) var(--ease-enter) both;
+}
+.sheet-enter-up {
+  animation: sheetEnterUp var(--motion-base) var(--ease-enter) both;
+}
+.toast-enter {
+  animation: toastSlideTop var(--motion-base) var(--ease-enter) both;
+}
+
+/* Staggered List Entry (first 8 items max) */
+@keyframes staggerFadeUp {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.stagger-item-0 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 0ms both; }
+.stagger-item-1 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 35ms both; }
+.stagger-item-2 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 70ms both; }
+.stagger-item-3 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 105ms both; }
+.stagger-item-4 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 140ms both; }
+.stagger-item-5 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 175ms both; }
+.stagger-item-6 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 210ms both; }
+.stagger-item-7 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 245ms both; }
+
+/* Breathing Dots & Badges from Stitch */
+@keyframes liveDotPulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.22); opacity: 1; }
+}
+.live-dot-pulse {
+  animation: liveDotPulse 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
