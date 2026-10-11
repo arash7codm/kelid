@@ -198,7 +198,13 @@ export interface CollaboratorRecord extends BaseEntity {
   successfulDealsCount: number;
 }
 
-export type ReminderCategory = 'phone' | 'inquiry' | 'visit' | 'finance';
+export type ReminderCategory =
+  | 'phone'
+  | 'inquiry'
+  | 'visit'
+  | 'finance'
+  | 'documents'
+  | 'meeting';
 
 export interface ReminderRecord extends BaseEntity {
   title: string;
@@ -221,9 +227,11 @@ export interface ReminderRecord extends BaseEntity {
 
   categories: ReminderCategory[];
   priority: 'urgent' | 'normal' | 'low';
+  priorityReason?: string;
 
   smsNotification: boolean;
   registerInCartable: boolean;
+  syncWithPhoneCalendar?: boolean;
 
   status: 'pending' | 'done';
   callResult?: 'موفق' | 'بی‌پاسخ' | 'نیاز به تماس مجدد';

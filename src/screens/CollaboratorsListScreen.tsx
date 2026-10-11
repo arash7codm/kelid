@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
 import { KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { saveCollaborator, softDeleteEntity } from '../db/repositories';
 import { CollaboratorRecord } from '../db/schema';
 import { useApp } from '../hooks/useAppContext';
@@ -229,15 +230,13 @@ export const CollaboratorsListScreen: React.FC = () => {
                 <span className="material-symbols-outlined text-base">close</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleVoiceSearch}
-              className={`transition-colors flex items-center justify-center ${
-                isVoiceListening ? 'text-rose-400 animate-pulse' : 'text-slate-400 hover:text-[#f1cb83]'
-              }`}
-            >
-              <span className="material-symbols-outlined text-lg">mic</span>
-            </button>
+            <VoiceMicButton
+              currentValue={searchQuery}
+              append={false}
+              variant="inline-icon"
+              title="جستجوی صوتی"
+              onTextChange={(txt) => setSearchQuery(txt)}
+            />
           </div>
 
           {!isViewer && (
@@ -577,7 +576,7 @@ export const CollaboratorsListScreen: React.FC = () => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 bg-[#0c1326]/95 border border-[#f1cb83]/35 shadow-2xl space-y-3.5"
+            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 crystal-glass border border-[#f1cb83]/35 shadow-2xl space-y-3.5"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div>

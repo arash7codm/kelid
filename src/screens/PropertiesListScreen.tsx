@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AmbientBackground, BottomNavAndQuickMenu, KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { PropertyRecord } from '../db/schema';
 import { useApp } from '../hooks/useAppContext';
 import { searchPropertiesSmart } from '../services/search';
@@ -261,12 +262,10 @@ export const PropertiesListScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#070d1a] text-[#dae2ff] relative overflow-x-hidden">
-      <AmbientBackground />
-
+    <div className="min-h-screen bg-transparent text-[#dae2ff] relative overflow-x-hidden">
       <main className="page-enter-tab flex flex-col relative w-full pb-32 min-h-screen bg-transparent z-10 max-w-lg mx-auto">
         {/* Header & Brand Top Bar with Glass Finish (Stitch Image 10.html — removed fake dots unless loading) */}
-        <header className="px-5 pt-3 pb-3 flex flex-col gap-2.5 border-b border-[#f1cb83]/20 bg-[#050d22]/75 backdrop-blur-xl sticky top-0 z-30">
+        <header className="px-5 pt-3 pb-3 flex flex-col gap-2.5 border-b border-[#f1cb83]/20 bg-[#080d1a]/60 backdrop-blur-2xl sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -327,16 +326,15 @@ export const PropertiesListScreen: React.FC = () => {
                     <span className="material-symbols-outlined text-[17px]">cancel</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={handleVoiceSearch}
+                <VoiceMicButton
+                  currentValue={propertyFilters.searchQuery}
+                  append={false}
+                  variant="square-icon"
                   title="جستجوی صوتی"
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer ${
-                    isVoiceListening ? 'bg-red-500 text-white animate-pulse' : 'text-[#f1cb83]'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">mic</span>
-                </button>
+                  onTextChange={(txt) =>
+                    setPropertyFilters((prev) => ({ ...prev, searchQuery: txt }))
+                  }
+                />
               </div>
             </div>
 
@@ -1153,8 +1151,6 @@ export const PropertiesListScreen: React.FC = () => {
           </div>
         </div>
       )}
-
-      <BottomNavAndQuickMenu />
     </div>
   );
 };

@@ -127,10 +127,8 @@ export const SettingsScreen: React.FC = () => {
       : 'bg-emerald-400 shadow-[0_0_10px_#34d399]';
 
   return (
-    <div className="min-h-screen bg-[#080d1a] text-[#dae2ff] relative overflow-x-hidden pb-32">
-      <AmbientBackground />
-
-      <header className="fixed top-0 inset-x-0 z-40 pt-safe bg-[#080d1a]/80 backdrop-blur-xl border-b border-[#f1cb83]/15">
+    <div className="min-h-screen bg-transparent text-[#dae2ff] relative overflow-x-hidden pb-32">
+      <header className="fixed top-0 inset-x-0 z-40 pt-safe bg-[#080d1a]/60 backdrop-blur-2xl border-b border-[#f1cb83]/15">
         <div className="h-16 px-5 flex items-center justify-between max-w-lg mx-auto">
           <div className="flex items-center gap-2.5">
             <button
@@ -510,8 +508,6 @@ export const SettingsScreen: React.FC = () => {
           </p>
         </footer>
       </main>
-
-      <BottomNavAndQuickMenu />
     </div>
   );
 };

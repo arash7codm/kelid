@@ -2,22 +2,56 @@
 
 @layer base {
   :root {
+    /* توکن‌های پالت رنگی مرجع داشبورد.html */
+    --bg-surface: #080d1a;
+    --bg-obsidian-top: #060a16;
+    --bg-obsidian-mid: #091124;
+    --bg-obsidian-bot: #040813;
+    --color-primary: #f1cb83;
+    --color-primary-container: #d4b06a;
+    --color-primary-fixed: #ffdea3;
+    --color-on-primary: #402d00;
+    --color-secondary: #b8c5f5;
+    --color-tertiary: #f4cb7f;
+    --color-tertiary-container: #d6b067;
+    --color-tertiary-fixed: #ffdea4;
+    --color-error: #ffb4ab;
+    --color-error-container: #93000a;
+    --color-on-error-container: #ffdad6;
+    --color-on-surface: #dae2ff;
+    --color-on-surface-variant: #d1c5b4;
+    --color-surface-container-high: #21293f;
+    --color-surface-container-highest: #2c344b;
+    --color-surface-bright: #30394f;
+
+    /* توکن‌های سیستم شیشه‌ای (Glassmorphism) */
+    --glass-bg: rgba(18, 27, 48, 0.48);
+    --glass-bg-fallback: rgba(16, 25, 46, 0.84);
+    --glass-border: rgba(241, 203, 131, 0.18);
+    --glass-border-hover: rgba(241, 203, 131, 0.4);
+    --glass-subtle-bg: rgba(10, 19, 40, 0.55);
+    --glass-inner-bg: rgba(8, 14, 28, 0.5);
+
+    /* توکن‌های زمان‌بندی و Easing */
     --motion-fast: 150ms;
-    --motion-base: 250ms;
+    --motion-base: 280ms;
     --motion-slow: 350ms;
-    --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-cascade: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
     --ease-exit: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   *, html, body, button, input, select, textarea {
-    font-family: 'Vazirmatn', 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Vazirmatn', 'Plus Jakarta Sans', sans-serif !important;
   }
 
   html, body {
     width: 100%;
+    min-height: max(884px, 100dvh);
     margin: 0;
     padding: 0;
-    background-color: #050b17;
+    background-color: #080d1a;
     color: #dae2ff;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
@@ -40,108 +74,530 @@
   display: none;
 }
 
-/* Stitch Color & Utility Classes */
+/* توقف انیمیشن‌های پس‌زمینه هنگام پنهان بودن تب مرورگر (visibilitychange) */
+html.tab-hidden *,
+html.tab-hidden *::before,
+html.tab-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+/* کلاس‌های کمکی رنگ‌های مرجع */
 .text-primary { color: #f1cb83; }
 .bg-primary { background-color: #f1cb83; }
 .border-primary { border-color: #f1cb83; }
-.text-on-primary { color: #261900; }
-.text-secondary { color: #38bdf8; }
+.text-on-primary { color: #402d00; }
+.text-secondary { color: #b8c5f5; }
 .text-tertiary { color: #f4cb7f; }
 .text-error { color: #ffb4ab; }
-.bg-error { background-color: #ef4444; }
+.bg-error { background-color: #ffb4ab; }
 .text-on-surface { color: #dae2ff; }
 .text-on-surface-variant { color: #d1c5b4; }
 
-/* 1. Living Glass Ambient Background Drift (20-40s smooth transform-only loops, max 3 moving layers) */
-@keyframes ambientDrift1 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.45; }
-  50% { transform: translate3d(24px, -36px, 0) scale(1.08); opacity: 0.7; }
+/* ========================================================= */
+/* ۱. انیمیشن‌های پیوسته پس‌زمینه نورانی (از داشبورد.html)  */
+/* ========================================================= */
+@keyframes floatParticles {
+  0% { transform: translateY(0px) scale(0.9) rotate(0deg); opacity: 0.25; }
+  50% { transform: translateY(-70px) scale(1.15) rotate(180deg); opacity: 0.7; }
+  100% { transform: translateY(-140px) scale(0.9) rotate(360deg); opacity: 0.2; }
 }
-@keyframes ambientDrift2 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.35; }
-  50% { transform: translate3d(-28px, 32px, 0) scale(1.1); opacity: 0.6; }
+@keyframes floatParticlesAlt {
+  0% { transform: translateY(0px) scale(1) rotate(0deg); opacity: 0.3; }
+  50% { transform: translateY(-90px) scale(1.25) rotate(-180deg); opacity: 0.8; }
+  100% { transform: translateY(-180px) scale(1) rotate(-360deg); opacity: 0.25; }
 }
-@keyframes ambientDrift3 {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.96); opacity: 0.3; }
-  50% { transform: translate3d(18px, -45px, 0) scale(1.05); opacity: 0.55; }
+@keyframes luxuryPulseGlow {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.35; }
+  50% { transform: scale(1.18) translate(15px, -20px); opacity: 0.65; }
+}
+@keyframes luxuryPulseGlow2 {
+  0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.25; }
+  50% { transform: scale(1.22) translate(-20px, 25px); opacity: 0.55; }
+}
+@keyframes sketchShimmer {
+  0% { stroke-dashoffset: 600; opacity: 0.15; }
+  50% { stroke-dashoffset: 300; opacity: 0.45; }
+  100% { stroke-dashoffset: 0; opacity: 0.15; }
+}
+@keyframes keyFloatWatermark {
+  0% { transform: translateY(40px) scale(0.96) rotate(-2deg); opacity: 0.04; }
+  50% { transform: translateY(-25px) scale(1.04) rotate(2deg); opacity: 0.085; }
+  100% { transform: translateY(40px) scale(0.96) rotate(-2deg); opacity: 0.04; }
 }
 
-.ambient-layer-1 {
-  animation: ambientDrift1 26s ease-in-out infinite;
+.anim-particles-1 {
+  animation: floatParticles 10s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   will-change: transform, opacity;
 }
-.ambient-layer-2 {
-  animation: ambientDrift2 32s ease-in-out infinite;
+.anim-particles-2 {
+  animation: floatParticlesAlt 10s cubic-bezier(0.4, 0, 0.2, 1) infinite reverse;
   will-change: transform, opacity;
 }
-.ambient-layer-3 {
-  animation: ambientDrift3 38s ease-in-out infinite;
+.anim-glow-1 {
+  animation: luxuryPulseGlow 10s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.anim-glow-2 {
+  animation: luxuryPulseGlow2 10s ease-in-out infinite 2s;
+  will-change: transform, opacity;
+}
+.anim-sketch {
+  animation: sketchShimmer 10s linear infinite;
+}
+.anim-watermark {
+  animation: keyFloatWatermark 10s ease-in-out infinite;
   will-change: transform, opacity;
 }
 
-/* 2. Crystal Glass & Budget-Conscious Blur (<= 12px radius with @supports fallback) */
-.crystal-glass, .glass-card, .living-glass-panel {
+/* ========================================================= */
+/* ۲. انیمیشن‌های ورود پله‌ای و ریزتعاملات (از داشبورد.html) */
+/* ========================================================= */
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(22px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.fade-in-1 { animation: fadeInUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both; }
+.fade-in-2 { animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.14s both; }
+.fade-in-3 { animation: fadeInUp 0.65s cubic-bezier(0.16, 1, 0.3, 1) 0.22s both; }
+.fade-in-4 { animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.30s both; }
+.fade-in-5 { animation: fadeInUp 0.75s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both; }
+.fade-in-6 { animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.46s both; }
+
+@keyframes glowBreathingDot {
+  0%, 100% { box-shadow: 0 0 6px rgba(52, 211, 153, 0.7), 0 0 12px rgba(52, 211, 153, 0.35); transform: scale(1); }
+  50% { box-shadow: 0 0 16px rgba(52, 211, 153, 1), 0 0 28px rgba(52, 211, 153, 0.7); transform: scale(1.22); }
+}
+@keyframes glowUrgentPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.5), inset 0 0 6px rgba(239, 68, 68, 0.3); transform: scale(1); }
+  50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.9), inset 0 0 10px rgba(239, 68, 68, 0.6); transform: scale(1.05); }
+}
+@keyframes goldenOrbPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; filter: drop-shadow(0 0 14px rgba(241, 203, 131, 0.45)); }
+  50% { transform: scale(1.15); opacity: 0.95; filter: drop-shadow(0 0 30px rgba(241, 203, 131, 0.9)); }
+}
+@keyframes gentleCenterPulse {
+  0%, 100% { box-shadow: 0 0 15px rgba(241, 203, 131, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.6); }
+  50% { box-shadow: 0 0 28px rgba(241, 203, 131, 0.7), inset 0 1px 3px rgba(255, 255, 255, 0.85); }
+}
+@keyframes periodicSheenSweep {
+  0%, 70% { transform: translateX(200%) rotate(25deg); opacity: 0; }
+  80% { opacity: 0.6; }
+  95%, 100% { transform: translateX(-200%) rotate(25deg); opacity: 0; }
+}
+
+.live-dot-pulse { animation: glowBreathingDot 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.live-urgent-pulse { animation: glowUrgentPulse 1.8s ease-in-out infinite; }
+.golden-action-pulse { animation: goldenOrbPulse 3.2s ease-in-out infinite; }
+.center-button-pulse { animation: gentleCenterPulse 3.5s ease-in-out infinite; }
+
+/* ========================================================= */
+/* ۳. سیستم یکپارچه شیشه‌ای (Glassmorphism) مطابق مرجع       */
+/* ========================================================= */
+.crystal-glass,
+.glass-card,
+.living-glass-panel {
   position: relative;
-  background: rgba(16, 25, 46, 0.76);
-  border: 1px solid rgba(241, 203, 131, 0.22);
-  box-shadow: 0 10px 32px -4px rgba(0, 0, 0, 0.55), inset 0 1px 1px 0 rgba(255, 255, 255, 0.14);
+  background: var(--glass-bg-fallback);
+  border: 1px solid var(--glass-border);
+  box-shadow:
+    0 10px 35px -5px rgba(0, 0, 0, 0.55),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 1px 0 rgba(241, 203, 131, 0.08);
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.35s ease;
   overflow: hidden;
-  transition: transform var(--motion-base) var(--ease-enter), border-color var(--motion-base) ease;
 }
 
-@supports ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+@supports ((-webkit-backdrop-filter: blur(24px)) or (backdrop-filter: blur(24px))) {
   html:not(.reduced-glass-mode) .crystal-glass,
   html:not(.reduced-glass-mode) .glass-card,
   html:not(.reduced-glass-mode) .living-glass-panel {
-    background: rgba(16, 25, 46, 0.56);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
-    backdrop-filter: blur(12px) saturate(140%);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
   }
 }
 
-.crystal-glass-subtle, .crystal-sub-glass, .glass-field {
-  background: rgba(9, 16, 34, 0.72);
-  border: 1px solid rgba(241, 203, 131, 0.18);
-  transition: transform var(--motion-fast) var(--ease-enter), border-color var(--motion-fast) ease;
+.crystal-glass:hover,
+.glass-card:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow:
+    0 16px 45px -6px rgba(0, 0, 0, 0.65),
+    0 0 25px rgba(241, 203, 131, 0.15),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.crystal-glass::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(115deg, transparent 40%, rgba(241, 203, 131, 0.16) 50%, transparent 60%);
+  pointer-events: none;
+  animation: periodicSheenSweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  z-index: 1;
+}
+
+.crystal-glass-subtle,
+.crystal-sub-glass,
+.glass-field {
+  background: rgba(10, 19, 40, 0.75);
+  border: 1px solid rgba(241, 203, 131, 0.12);
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@supports ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+  html:not(.reduced-glass-mode) .crystal-glass-subtle,
+  html:not(.reduced-glass-mode) .crystal-sub-glass,
+  html:not(.reduced-glass-mode) .glass-field {
+    background: var(--glass-subtle-bg);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+}
+
+.crystal-glass-subtle:hover {
+  background: rgba(14, 25, 52, 0.7);
+  border-color: rgba(241, 203, 131, 0.3);
 }
 
 .crystal-glass-inner {
   position: relative;
-  background: rgba(8, 14, 28, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: transform var(--motion-fast) var(--ease-enter), border-color var(--motion-fast) ease;
+  background: rgba(8, 14, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  transition:
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.28s ease,
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
+  overflow: hidden;
 }
 
-/* 3. One-Shot Scheduled Sheen Sweep & Moving Rim Light */
+@supports ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+  html:not(.reduced-glass-mode) .crystal-glass-inner {
+    background: var(--glass-inner-bg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+}
+
+/* جلوگیری از انباشت چندگانه backdrop-filter در لایه‌های شیشه‌ای تو در تو برای حفظ عملکرد ۶۰ فریم */
+.crystal-glass .crystal-glass-inner,
+.crystal-glass .crystal-glass-subtle,
+.glass-card .crystal-glass-inner,
+.glass-card .crystal-glass-subtle,
+.glass-card .glass-input {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.crystal-glass-inner:hover {
+  background: rgba(16, 26, 48, 0.75);
+  border-color: rgba(241, 203, 131, 0.32);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 16px rgba(241, 203, 131, 0.12);
+}
+
+.crystal-glass-inner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(241, 203, 131, 0.12), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.crystal-glass-inner:hover::after {
+  opacity: 1;
+}
+
+.glass-input {
+  background: rgba(8, 15, 32, 0.58);
+  border: 1px solid rgba(241, 203, 131, 0.22);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+.glass-input:focus-within {
+  background: rgba(12, 22, 44, 0.72);
+  border-color: rgba(241, 203, 131, 0.65);
+  box-shadow: 0 0 18px rgba(241, 203, 131, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.gold-pill-btn {
+  background: linear-gradient(135deg, #d4b06a 0%, #f1cb83 50%, #ffdea3 100%);
+  color: #1e1300;
+  box-shadow: 0 4px 18px rgba(241, 203, 131, 0.32), inset 0 1px 1px rgba(255, 255, 255, 0.45);
+}
+.gold-pill-btn:hover {
+  filter: brightness(1.06);
+}
+
+.gold-border-glow {
+  border: 1px solid rgba(241, 203, 131, 0.24);
+  box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.55), 0 0 20px rgba(241, 203, 131, 0.08);
+}
+
+.gold-text-glow {
+  text-shadow: 0 0 18px rgba(241, 203, 131, 0.28);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.ai-shimmer-field {
+  border-color: rgba(241, 203, 131, 0.75) !important;
+  box-shadow: 0 0 16px rgba(241, 203, 131, 0.25);
+}
+
+/* بهینه‌سازی هوشمند موبایل */
+@media (max-width: 640px) {
+  @supports ((-webkit-backdrop-filter: blur(18px)) or (backdrop-filter: blur(18px))) {
+    html:not(.reduced-glass-mode) .crystal-glass,
+    html:not(.reduced-glass-mode) .glass-card,
+    html:not(.reduced-glass-mode) .living-glass-panel {
+      -webkit-backdrop-filter: blur(18px) saturate(150%);
+      backdrop-filter: blur(18px) saturate(150%);
+    }
+  }
+}
+
+/* ========================================================= */
+/* ۴. آکاردئون، نوار جستجو و ناوبری پایین (از داشبورد.html)  */
+/* ========================================================= */
+.accordion-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.38s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  opacity: 0;
+}
+.accordion-content.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.accordion-content > div {
+  overflow: hidden;
+}
+
+.search-container:focus-within {
+  border-color: rgba(241, 203, 131, 0.6) !important;
+  box-shadow: 0 0 25px rgba(241, 203, 131, 0.25), inset 0 1px 2px rgba(255, 255, 255, 0.2) !important;
+  transform: scale(1.01);
+}
+
+.nav-tab:hover .nav-icon {
+  transform: translateY(-2px) scale(1.08);
+}
+.nav-tab:active .nav-icon {
+  transform: scale(0.92);
+}
+
+/* ========================================================= */
+/* ۵. مودال منوی دسترسی سریع و کارت‌های ۳بعدی (داشبورد.html) */
+/* ========================================================= */
+#quick-menu-backdrop {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+#quick-menu-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#quick-menu-panel {
+  transform-origin: bottom center;
+  transform: scale(0.85) translateY(45px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.5s cubic-bezier(0.34, 1.35, 0.64, 1), opacity 0.4s ease;
+}
+#quick-menu-panel.open {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.frosted-menu-panel {
+  position: relative;
+  background: rgba(14, 20, 32, 0.68) !important;
+  backdrop-filter: blur(28px) saturate(110%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(110%) !important;
+  border: 1px solid rgba(241, 203, 131, 0.24) !important;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.88),
+    0 0 35px rgba(241, 203, 131, 0.12),
+    inset 0 1px 2px rgba(255, 255, 255, 0.18),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+#center-plus-icon {
+  transition: transform 0.45s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+#center-plus-icon.rotate-x {
+  transform: rotate(135deg) scale(1.05);
+}
+
+.menu-card-item {
+  transform: scale(0.72);
+  opacity: 0;
+  filter: blur(8px);
+  transition: transform 0.55s cubic-bezier(0.34, 1.3, 0.64, 1), opacity 0.45s ease, filter 0.45s ease;
+}
+#quick-menu-panel.open .menu-card-item:nth-child(1) {
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  transition-delay: 0.05s;
+}
+#quick-menu-panel.open .menu-card-item:nth-child(2) {
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  transition-delay: 0.11s;
+}
+#quick-menu-panel.open .menu-card-item:nth-child(3) {
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  transition-delay: 0.17s;
+}
+#quick-menu-panel.open .menu-card-item:nth-child(4) {
+  transform: scale(1);
+  opacity: 1;
+  filter: blur(0px);
+  transition-delay: 0.23s;
+}
+
+@keyframes glowCycleGold {
+  0%, 100% { border-color: rgba(241, 203, 131, 0.25); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -6px 14px rgba(0,0,0,0.4); }
+  30%, 60% { border-color: rgba(241, 203, 131, 0.85); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), 0 0 28px rgba(241, 203, 131, 0.45), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.4); }
+}
+@keyframes glowCycleBlue {
+  0%, 100% { border-color: rgba(56, 189, 248, 0.22); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -6px 14px rgba(0,0,0,0.4); }
+  30%, 60% { border-color: rgba(56, 189, 248, 0.8); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), 0 0 28px rgba(56, 189, 248, 0.42), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.4); }
+}
+@keyframes glowCycleEmerald {
+  0%, 100% { border-color: rgba(52, 211, 153, 0.22); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -6px 14px rgba(0,0,0,0.4); }
+  30%, 60% { border-color: rgba(52, 211, 153, 0.8); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), 0 0 28px rgba(52, 211, 153, 0.42), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.4); }
+}
+@keyframes glowCycleAmber {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.25); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -6px 14px rgba(0,0,0,0.4); }
+  30%, 60% { border-color: rgba(245, 158, 11, 0.85); box-shadow: 0 4px 10px rgba(0,0,0,0.5), 0 18px 32px rgba(0,0,0,0.55), 0 0 28px rgba(245, 158, 11, 0.45), inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -6px 14px rgba(0,0,0,0.4); }
+}
+
+.glow-anim-gold { animation: glowCycleGold 4s ease-in-out infinite 0s; }
+.glow-anim-blue { animation: glowCycleBlue 4s ease-in-out infinite 1s; }
+.glow-anim-emerald { animation: glowCycleEmerald 4s ease-in-out infinite 2s; }
+.glow-anim-amber { animation: glowCycleAmber 4s ease-in-out infinite 3s; }
+
+@keyframes floatWave1 { 0%, 100% { transform: translateY(0px) rotate(-1deg); } 50% { transform: translateY(-4px) rotate(-1deg); } }
+@keyframes floatWave2 { 0%, 100% { transform: translateY(-3px) rotate(1deg); } 50% { transform: translateY(2px) rotate(1deg); } }
+@keyframes floatWave3 { 0%, 100% { transform: translateY(1px) rotate(-1.5deg); } 50% { transform: translateY(-4px) rotate(-1.5deg); } }
+@keyframes floatWave4 { 0%, 100% { transform: translateY(-2px) rotate(1.5deg); } 50% { transform: translateY(3px) rotate(1.5deg); } }
+
+.wave-float-1 { animation: floatWave1 3.4s ease-in-out infinite; }
+.wave-float-2 { animation: floatWave2 3.6s ease-in-out infinite 0.8s; }
+.wave-float-3 { animation: floatWave3 3.8s ease-in-out infinite 1.6s; }
+.wave-float-4 { animation: floatWave4 3.5s ease-in-out infinite 2.4s; }
+
+@keyframes luminousMistSweep {
+  0% { transform: translateX(220%) translateY(-20%) rotate(30deg); opacity: 0; }
+  20% { opacity: 0.65; }
+  45%, 100% { transform: translateX(-220%) translateY(20%) rotate(30deg); opacity: 0; }
+}
+.card-mist-layer {
+  position: absolute;
+  inset: -50%;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.28) 48%, rgba(241, 203, 131, 0.35) 52%, transparent 65%);
+  filter: blur(8px);
+  pointer-events: none;
+  animation: luminousMistSweep 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  z-index: 10;
+}
+.card-mist-layer-1 { animation-delay: 0s; }
+.card-mist-layer-2 { animation-delay: 0.25s; }
+.card-mist-layer-3 { animation-delay: 0.5s; }
+.card-mist-layer-4 { animation-delay: 0.75s; }
+
+@keyframes soundBarPulse {
+  0%, 100% { height: 4px; opacity: 0.5; }
+  50% { height: 16px; opacity: 1; }
+}
+.sound-bar-1 { animation: soundBarPulse 1.2s ease-in-out infinite 0.1s; }
+.sound-bar-2 { animation: soundBarPulse 1.2s ease-in-out infinite 0.3s; }
+.sound-bar-3 { animation: soundBarPulse 1.2s ease-in-out infinite 0.5s; }
+.sound-bar-4 { animation: soundBarPulse 1.2s ease-in-out infinite 0.2s; }
+.sound-bar-5 { animation: soundBarPulse 1.2s ease-in-out infinite 0.4s; }
+
+.raised-3d-card {
+  position: relative;
+  border-radius: 1rem;
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.5),
+    0 18px 32px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.4);
+  transition:
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.28s ease,
+    border-color 0.28s ease,
+    filter 0.28s ease;
+  overflow: hidden;
+  transform-style: preserve-3d;
+}
+.raised-3d-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 50% 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 60%, transparent 100%);
+  pointer-events: none;
+  z-index: 2;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+.raised-3d-card:hover {
+  transform: translateY(-3px) scale(1.04) !important;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.6),
+    0 24px 44px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.4) !important;
+}
+.raised-3d-card:active {
+  transform: scale(0.97) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), inset 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+}
+
+.icon-convex-bubble {
+  box-shadow:
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.45),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.45);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+}
+
+/* ========================================================= */
+/* ۶. ترنزیشن‌های صفحات و شیت‌های برنامه                     */
+/* ========================================================= */
 @keyframes oneShotSheenSweep {
-  0% {
-    transform: translate3d(160%, -20%, 0) rotate(20deg);
-    opacity: 0;
-  }
-  20% {
-    opacity: 0.75;
-  }
-  80% {
-    opacity: 0.65;
-  }
-  100% {
-    transform: translate3d(-160%, 20%, 0) rotate(20deg);
-    opacity: 0;
-  }
+  0% { transform: translate3d(160%, -20%, 0) rotate(20deg); opacity: 0; }
+  20% { opacity: 0.75; }
+  80% { opacity: 0.65; }
+  100% { transform: translate3d(-160%, 20%, 0) rotate(20deg); opacity: 0; }
 }
-
 @keyframes oneShotRimShift {
-  0% {
-    transform: translate3d(100%, 0, 0);
-    opacity: 0;
-  }
-  30% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(-100%, 0, 0);
-    opacity: 0;
-  }
+  0% { transform: translate3d(100%, 0, 0); opacity: 0; }
+  30% { opacity: 0.9; }
+  100% { transform: translate3d(-100%, 0, 0); opacity: 0; }
 }
 
 .glass-sweep-active::after {
@@ -177,12 +633,10 @@
   animation: oneShotRimShift var(--sweep-duration, 1500ms) var(--ease-enter) forwards;
 }
 
-/* Tactile Press & Gold Glow on Tappable Controls */
 button:active, a:active, .tappable:active {
   transform: scale(0.97);
 }
 
-/* Direction-Aware Page Transitions */
 @keyframes pageEnterForward {
   from { opacity: 0; transform: translate3d(-18px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
@@ -200,20 +654,11 @@ button:active, a:active, .tappable:active {
   to { opacity: 1; transform: translate3d(-50%, 0, 0); }
 }
 
-.page-enter-forward {
-  animation: pageEnterForward var(--motion-base) var(--ease-enter) both;
-}
-.page-enter-tab {
-  animation: pageEnterTab var(--motion-base) var(--ease-enter) both;
-}
-.sheet-enter-up {
-  animation: sheetEnterUp var(--motion-base) var(--ease-enter) both;
-}
-.toast-enter {
-  animation: toastSlideTop var(--motion-base) var(--ease-enter) both;
-}
+.page-enter-forward { animation: pageEnterForward var(--motion-base) var(--ease-enter) both; }
+.page-enter-tab { animation: pageEnterTab var(--motion-base) var(--ease-enter) both; }
+.sheet-enter-up { animation: sheetEnterUp var(--motion-base) var(--ease-enter) both; }
+.toast-enter { animation: toastSlideTop var(--motion-base) var(--ease-enter) both; }
 
-/* Staggered List Entry (first 8 items max) */
 @keyframes staggerFadeUp {
   from { opacity: 0; transform: translate3d(0, 14px, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
@@ -226,15 +671,6 @@ button:active, a:active, .tappable:active {
 .stagger-item-5 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 175ms both; }
 .stagger-item-6 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 210ms both; }
 .stagger-item-7 { animation: staggerFadeUp var(--motion-base) var(--ease-enter) 245ms both; }
-
-/* Breathing Dots & Badges from Stitch */
-@keyframes liveDotPulse {
-  0%, 100% { transform: scale(1); opacity: 0.85; }
-  50% { transform: scale(1.22); opacity: 1; }
-}
-.live-dot-pulse {
-  animation: liveDotPulse 2.2s ease-in-out infinite;
-}
 
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {

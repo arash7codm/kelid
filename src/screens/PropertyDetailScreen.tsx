@@ -217,7 +217,7 @@ export const PropertyDetailScreen: React.FC = () => {
 
   if (!property) {
     return (
-      <div className="min-h-screen bg-[#0a1328] text-[#dae2ff] flex flex-col items-center justify-center p-6 text-center gap-3">
+      <div className="min-h-screen bg-transparent text-[#dae2ff] flex flex-col items-center justify-center p-6 text-center gap-3 relative z-10">
         <KelidLogoIcon className="w-12 h-12" />
         <p className="text-sm font-bold">پرونده ملکی مورد نظر یافت نشد.</p>
         <button
@@ -238,11 +238,9 @@ export const PropertyDetailScreen: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#0a1328] text-[#dae2ff] flex flex-col relative overflow-x-hidden pb-28">
-      <AmbientBackground />
-
+    <div className="min-h-screen bg-transparent text-[#dae2ff] flex flex-col relative overflow-x-hidden pb-28">
       {/* Header with Brand Golden Logo & Status Badge (from Stitch Image 12.html) */}
-      <header className="fixed top-0 inset-x-0 z-40 bg-[#050d22]/80 backdrop-blur-xl pt-safe shadow-[0_4px_30px_rgba(0,0,0,0.5)] border-b border-[#f1cb83]/15">
+      <header className="fixed top-0 inset-x-0 z-40 bg-[#080d1a]/60 backdrop-blur-2xl pt-safe shadow-[0_4px_30px_rgba(0,0,0,0.5)] border-b border-[#f1cb83]/15">
         <div className="h-16 px-5 flex items-center justify-between max-w-lg mx-auto">
           <div className="flex items-center gap-2">
             <KelidLogoIcon className="h-10 w-10" />

@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
-import { KelidLogoIcon } from '../components/Layout';
+import { AmbientBackground, BottomNavAndQuickMenu, KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { CreditTier } from '../config';
 import {
+  deleteApplicant,
   generateNextCode,
   registerPlaceUsage,
   saveApplicant,
@@ -44,7 +46,8 @@ const PRIORITY_TAGS_OPTIONS = [
 export const ApplicantFormScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { snapshot, refreshSnapshot, showToast, askPermission } = useApp();
+  const { snapshot, refreshSnapshot, showToast, askPermission, askConfirm, currentUser } = useApp();
+  const isViewer = currentUser.role === 'بیننده';
 
   const isEdit = Boolean(id);
   const [autoCode, setAutoCode] = useState('C-001');
@@ -85,7 +88,13 @@ export const ApplicantFormScreen: React.FC = () => {
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [submittedOnce, setSubmittedOnce] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
   const voiceRef = useRef<VoiceSessionController | null>(null);
+  const nameFieldRef = useRef<HTMLDivElement | null>(null);
+  const phoneFieldRef = useRef<HTMLDivElement | null>(null);
+  const budgetFieldRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isEdit && id && snapshot) {
@@ -185,22 +194,38 @@ export const ApplicantFormScreen: React.FC = () => {
     await session.start();
   };
 
-  const handleSave = async (navigateToMatches = false) => {
+  const validationErrors = useMemo(() => {
+    const errors: { fullName?: string; phone?: string; maxBudget?: string } = {};
     if (!fullName.trim()) {
-      showToast('لطفاً نام و نام خانوادگی متقاضی را وارد کنید.', 'error');
-      return;
+      errors.fullName = 'وارد کردن نام و نام خانوادگی متقاضی الزامی است.';
     }
     if (!validateIranianMobile(phone)) {
-      showToast('شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود (مثال: ۰۹۱۲۱۲۳۴۵۶۷).', 'error');
+      errors.phone = 'شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود (مثال: ۰۹۱۲۱۲۳۴۵۶۷).';
+    }
+    if (parseNumericInput(maxBudgetStr) <= 0) {
+      errors.maxBudget = 'وارد کردن سقف بودجه خرید متقاضی الزامی است.';
+    }
+    return errors;
+  }, [fullName, phone, maxBudgetStr]);
+
+  const handleSave = async (navigateToMatches = false) => {
+    if (isViewer) return;
+    setSubmittedOnce(true);
+
+    if (validationErrors.fullName || validationErrors.phone || validationErrors.maxBudget) {
+      showToast('لطفاً فیلدهای ضروری مشخص‌شده را تکمیل نمایید.', 'error');
+      if (validationErrors.fullName) {
+        nameFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.phone) {
+        phoneFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.maxBudget) {
+        budgetFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
     const maxBudget = parseNumericInput(maxBudgetStr);
     const minBudget = parseNumericInput(minBudgetStr);
-    if (maxBudget <= 0) {
-      showToast('لطفاً سقف بودجه خرید متقاضی را به تومان وارد نمایید.', 'error');
-      return;
-    }
 
     setSaving(true);
     try {
@@ -268,9 +293,11 @@ export const ApplicantFormScreen: React.FC = () => {
         });
       }
 
+      setIsDirty(false);
       await refreshSnapshot();
       showToast(`پرونده متقاضی «${saved.name}» با موفقیت ذخیره شد.`, 'success');
 
+      markReturningToList();
       runWithViewTransition(() => {
         if (navigateToMatches) {
           navigate(`/search?applicantId=${encodeURIComponent(saved.id)}`);
@@ -283,20 +310,48 @@ export const ApplicantFormScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteApplicant = async () => {
+    if (!isEdit || !id || isViewer) return;
+    const confirmed = await askConfirm({
+      title: `حذف متقاضی (${autoCode})`,
+      message: 'آیا مطمئن هستید؟ این عمل قابل بازگشت نیست.',
+      confirmLabel: 'حذف متقاضی',
+      danger: true,
+    });
+    if (!confirmed) return;
+    await deleteApplicant(id);
+    setIsDirty(false);
+    await refreshSnapshot();
+    showToast(`پرونده متقاضی ${autoCode} حذف شد`, 'info');
+    markReturningToList();
+    runWithViewTransition(() => navigate('/applicants'));
+  };
+
+  const handleCloseWithGuard = async () => {
+    if (isDirty) {
+      const discard = await askConfirm({
+        title: 'خروج بدون ذخیره تغییرات؟',
+        message: 'اطلاعات واردشده در فرم متقاضی هنوز ذخیره نشده‌اند. آیا از خروج اطمینان دارید؟',
+        confirmLabel: 'بله، خروج',
+        danger: true,
+      });
+      if (!discard) return;
+    }
+    markReturningToList();
+    runWithViewTransition(() => navigate('/applicants'));
+  };
+
   const maxBudgetNumber = parseNumericInput(maxBudgetStr);
 
   return (
-    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-40">
+    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-48 bg-transparent">
       {/* Sticky Header (Exact match to Image 2.html) */}
-      <header className="sticky top-0 z-30 bg-[#050b18]/85 backdrop-blur-xl border-b border-white/10 px-4 pt-5 pb-3.5">
+      <header className="sticky top-0 z-30 bg-[#080d1a]/60 backdrop-blur-2xl border-b border-white/10 px-4 pt-5 pb-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                if (isEdit) markReturningToList();
-                runWithViewTransition(() => navigate(isEdit ? (-1 as any) : '/applicants'));
-              }}
+              onClick={handleCloseWithGuard}
               className="w-10 h-10 rounded-xl glass-card flex items-center justify-center border border-white/15 text-white hover:border-[#f1cb83]/50 active:scale-95 transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-xl">arrow_forward</span>
@@ -366,28 +421,44 @@ export const ApplicantFormScreen: React.FC = () => {
           </div>
 
           <div className="space-y-3.5">
-            <div>
+            <div ref={nameFieldRef}>
               <label className="block text-xs font-bold text-slate-200 mb-1.5">
                 نام و نام خانوادگی متقاضی <span className="text-[#f1cb83]">*</span>
               </label>
-              <div className="glass-input rounded-xl px-3 py-2.5 flex items-center gap-2">
+              <div
+                className={`glass-input rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+                  submittedOnce && validationErrors.fullName ? 'border border-red-500' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined text-slate-400 text-lg">person</span>
                 <input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="مثال: امیرحسین رضایی"
                   className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-semibold"
                 />
               </div>
+              {submittedOnce && validationErrors.fullName && (
+                <p className="text-[11px] text-red-400 font-semibold mt-1">
+                  {validationErrors.fullName}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div ref={phoneFieldRef}>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
                   شماره تماس اصلی <span className="text-[#f1cb83]">*</span>
                 </label>
-                <div className="glass-input rounded-xl px-3 py-2.5 flex items-center gap-2">
+                <div
+                  className={`glass-input rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+                    submittedOnce && validationErrors.phone ? 'border border-red-500' : ''
+                  }`}
+                >
                   <span className="material-symbols-outlined text-slate-400 text-lg">
                     phone_iphone
                   </span>
@@ -395,11 +466,19 @@ export const ApplicantFormScreen: React.FC = () => {
                     type="tel"
                     dir="ltr"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      setIsDirty(true);
+                    }}
                     placeholder="09121234567"
                     className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-semibold text-left"
                   />
                 </div>
+                {submittedOnce && validationErrors.phone && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    {validationErrors.phone}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
@@ -411,7 +490,10 @@ export const ApplicantFormScreen: React.FC = () => {
                     type="tel"
                     dir="ltr"
                     value={secondPhone}
-                    onChange={(e) => setSecondPhone(e.target.value)}
+                    onChange={(e) => {
+                      setSecondPhone(e.target.value);
+                      setIsDirty(true);
+                    }}
                     placeholder="اختیاری"
                     className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-medium text-left"
                   />
@@ -550,24 +632,34 @@ export const ApplicantFormScreen: React.FC = () => {
                   <span className="text-[10px] text-slate-400 mr-1.5 shrink-0">تومان</span>
                 </div>
               </div>
-              <div>
+              <div ref={budgetFieldRef}>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
                   حداکثر بودجه / سقف خرید <span className="text-[#f1cb83]">*</span>
                 </label>
                 <div
-                  className={`glass-input rounded-xl px-3 py-2.5 flex items-center justify-between border-[#f1cb83]/50 ${
-                    aiFilledFields.includes('maxBudget') ? 'ai-shimmer-field' : ''
-                  }`}
+                  className={`glass-input rounded-xl px-3 py-2.5 flex items-center justify-between ${
+                    submittedOnce && validationErrors.maxBudget
+                      ? 'border border-red-500'
+                      : 'border-[#f1cb83]/50'
+                  } ${aiFilledFields.includes('maxBudget') ? 'ai-shimmer-field' : ''}`}
                 >
                   <input
                     type="text"
                     dir="ltr"
                     value={toPersianDigits(maxBudgetStr)}
-                    onChange={(e) => setMaxBudgetStr(formatWithSeparator(e.target.value, false))}
+                    onChange={(e) => {
+                      setMaxBudgetStr(formatWithSeparator(e.target.value, false));
+                      setIsDirty(true);
+                    }}
                     className="bg-transparent border-none outline-none text-xs text-[#f1cb83] w-full font-extrabold text-left tracking-wide"
                   />
                   <span className="text-[10px] text-[#f1cb83] mr-1.5 shrink-0">تومان</span>
                 </div>
+                {submittedOnce && validationErrors.maxBudget && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    {validationErrors.maxBudget}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -982,7 +1074,10 @@ export const ApplicantFormScreen: React.FC = () => {
                 <textarea
                   rows={3}
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="توضیحات تکمیلی درباره سلیقه مشتری، زمان حضور در شمال، حساسیت‌های سندی یا بودجه..."
                   className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-medium resize-none leading-relaxed"
                 />
@@ -990,14 +1085,16 @@ export const ApplicantFormScreen: React.FC = () => {
                   <span className="text-[10px] text-slate-400">
                     قابل جستجو در موتور هوشمند کلید
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleVoiceFill}
-                    className="flex items-center gap-1 text-[11px] text-[#f1cb83] font-bold hover:underline cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-sm">mic</span>
-                    <span>ضبط یادداشت صوتی</span>
-                  </button>
+                  <VoiceMicButton
+                    currentValue={notes}
+                    append={true}
+                    variant="gold-pill"
+                    idleLabel="تایپ صوتی یادداشت"
+                    onTextChange={(txt) => {
+                      setNotes(txt);
+                      setIsDirty(true);
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -1005,8 +1102,8 @@ export const ApplicantFormScreen: React.FC = () => {
         </section>
       </main>
 
-      {/* Fixed Bottom Action Bar (Exact match to Image 2.html) */}
-      <div className="fixed bottom-16 left-0 right-0 z-40 px-4 pb-3 pt-2 bg-gradient-to-t from-[#050b18] via-[#050b18]/95 to-transparent">
+      {/* Fixed Bottom Action Bar (Above BottomNav with safe-area support) */}
+      <div className="fixed bottom-[76px] left-0 right-0 z-50 px-4 pb-2 pt-2 bg-gradient-to-t from-[#050b18] via-[#050b18]/95 to-transparent">
         <div className="max-w-md mx-auto glass-card rounded-2xl p-2.5 border border-[#f1cb83]/40 shadow-2xl space-y-2">
           <button
             type="button"
@@ -1017,19 +1114,41 @@ export const ApplicantFormScreen: React.FC = () => {
             <span className="material-symbols-outlined text-lg">save</span>
             <span>{isEdit ? 'بروزرسانی پرونده متقاضی' : 'ثبت و ذخیره پرونده متقاضی'}</span>
           </button>
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid ${isEdit ? 'grid-cols-3' : 'grid-cols-3'} gap-2`}>
+            {isEdit && !isViewer ? (
+              <button
+                type="button"
+                onClick={handleDeleteApplicant}
+                className="col-span-1 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-extrabold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">delete</span>
+                <span>حذف متقاضی</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSave(true)}
+                className="col-span-2 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">auto_awesome</span>
+                <span>ذخیره و نمایش املاک منطبق</span>
+              </button>
+            )}
+            {isEdit && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSave(true)}
+                className="col-span-1 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-[11px] font-extrabold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                <span>املاک منطبق</span>
+              </button>
+            )}
             <button
               type="button"
-              disabled={saving}
-              onClick={() => handleSave(true)}
-              className="col-span-2 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">auto_awesome</span>
-              <span>ذخیره و نمایش املاک منطبق</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => runWithViewTransition(() => navigate('/applicants'))}
+              onClick={handleCloseWithGuard}
               className="col-span-1 py-2.5 rounded-xl bg-white/5 border border-white/15 text-slate-300 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
             >
               <span className="material-symbols-outlined text-base">close</span>
@@ -1046,6 +1165,7 @@ export const ApplicantFormScreen: React.FC = () => {
           onClose={() => setIsDatePickerOpen(false)}
           onSelect={(d) => {
             setNextFollowUpDate(d);
+            setIsDirty(true);
             setIsDatePickerOpen(false);
           }}
         />

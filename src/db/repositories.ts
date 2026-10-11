@@ -131,6 +131,16 @@ export async function getMediaBlobUrl(mediaId: string | undefined): Promise<stri
   return url;
 }
 
+export async function deleteMediaBlob(mediaId: string | undefined): Promise<void> {
+  if (!mediaId) return;
+  const cachedUrl = blobUrlCache.get(mediaId);
+  if (cachedUrl) {
+    URL.revokeObjectURL(cachedUrl);
+    blobUrlCache.delete(mediaId);
+  }
+  await db.mediaBlobs.delete(mediaId);
+}
+
 // Shared Place Directory Service
 export async function registerPlaceUsage(city: string, neighborhoods: string[] = []) {
   const cleanCity = city.trim();
@@ -366,8 +376,13 @@ export async function saveReminder(data: Partial<ReminderRecord> & { id?: string
 
   await db.reminders.put(record);
 
-  // Update derived nextFollowupDate on linked applicant/collaborator
+  // Update derived nextFollowupDate on linked property/applicant/collaborator
   if (record.status === 'pending' && record.jalaliDate) {
+    if (record.linkedPropertyId) {
+      await db.properties.update(record.linkedPropertyId, {
+        nextFollowupDate: record.jalaliDate,
+      });
+    }
     if (record.linkedApplicantId) {
       await db.applicants.update(record.linkedApplicantId, {
         nextFollowupDate: record.jalaliDate,
@@ -382,6 +397,25 @@ export async function saveReminder(data: Partial<ReminderRecord> & { id?: string
 
   await markLocalMutation();
   return record;
+}
+
+export async function deleteReminder(id: string): Promise<void> {
+  const existing = await db.reminders.get(id);
+  if (!existing) return;
+  if (existing.audioMediaId) {
+    // Check if any other reminder uses the same audioMediaId
+    const otherRefs = await db.reminders
+      .filter((r) => !r.deleted && r.id !== id && r.audioMediaId === existing.audioMediaId)
+      .count();
+    if (otherRefs === 0) {
+      await deleteMediaBlob(existing.audioMediaId);
+    }
+  }
+  await db.reminders.update(id, {
+    deleted: true,
+    updatedAt: new Date().toISOString(),
+  });
+  await markLocalMutation();
 }
 
 export async function completeReminderWithResult(
@@ -440,6 +474,18 @@ export async function softDeleteEntity(
     });
     await markLocalMutation();
   };
+}
+
+export async function deleteProperty(id: string): Promise<() => Promise<void>> {
+  return softDeleteEntity('properties', id);
+}
+
+export async function deleteApplicant(id: string): Promise<() => Promise<void>> {
+  return softDeleteEntity('applicants', id);
+}
+
+export async function deleteCollaborator(id: string): Promise<() => Promise<void>> {
+  return softDeleteEntity('collaborators', id);
 }
 
 // ============================================================================
@@ -605,6 +651,39 @@ export async function getGlobalAppSnapshot(): Promise<GlobalAppSnapshot> {
       actionLabel: 'تماس با همکار',
       phone: col.phone,
       targetRoute: `/collaborators/${col.id}/edit`,
+    });
+  }
+
+  for (const rem of overdueReminders) {
+    const linkedProp = rem.linkedPropertyId
+      ? allProperties.find((p) => p.id === rem.linkedPropertyId)
+      : undefined;
+    const linkedApp = rem.linkedApplicantId
+      ? allApplicants.find((a) => a.id === rem.linkedApplicantId)
+      : undefined;
+    const linkedCol = rem.linkedCollaboratorId
+      ? allCollaborators.find((c) => c.id === rem.linkedCollaboratorId)
+      : undefined;
+
+    const codeLabel =
+      linkedProp?.code ||
+      linkedApp?.code ||
+      linkedCol?.code ||
+      rem.customLinks?.[0] ||
+      rem.code;
+    const phone = linkedApp?.phone || linkedCol?.phone || linkedProp?.ownerPhone;
+    const isOverdue = isJalaliDateOverdue(rem.jalaliDate);
+
+    dashboardAlerts.push({
+      id: `alert_rem_${rem.id}`,
+      badge: isOverdue ? 'یادآور معوقه' : 'یادآور فوری و بحرانی',
+      codeLabel: `پرونده: ${codeLabel}`,
+      delayLabel: `${toPersianDigits(rem.jalaliDate)} ساعت ${toPersianDigits(rem.time)}`,
+      title: rem.title,
+      subtitle: rem.transcript || rem.aiSummary || 'یادآور هوشمند ثبت‌شده در کارتابل پیگیری',
+      actionLabel: phone ? 'تماس سریع' : 'مشاهده یادآور',
+      phone,
+      targetRoute: '/reminders',
     });
   }
 

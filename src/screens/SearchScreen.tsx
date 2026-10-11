@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { saveReminder } from '../db/repositories';
 import { useApp } from '../hooks/useAppContext';
 import { runWithViewTransition } from '../motion';
@@ -296,15 +297,13 @@ export const SearchScreen: React.FC = () => {
               <span className="material-symbols-outlined text-sm">close</span>
             </button>
           )}
-          <button
-            type="button"
-            onClick={handleVoiceInput}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-md active:scale-95 transition-transform cursor-pointer ${
-              isVoiceListening ? 'bg-rose-500 text-white animate-pulse' : 'gold-pill-btn'
-            }`}
-          >
-            <span className="material-symbols-outlined text-lg">mic</span>
-          </button>
+          <VoiceMicButton
+            currentValue={query}
+            append={false}
+            variant="square-icon"
+            title="جستجوی صوتی به زبان طبیعی"
+            onTextChange={(txt) => setQuery(txt)}
+          />
         </div>
 
         {/* AI Natural Language Parsed Filter Chips */}

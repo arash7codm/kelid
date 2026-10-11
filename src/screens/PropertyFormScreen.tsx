@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
-import { AmbientBackground, KelidLogoIcon } from '../components/Layout';
+import { AmbientBackground, BottomNavAndQuickMenu, KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { PropertyStatus } from '../config';
 import {
+  deleteProperty,
   generateNextCode,
   getMediaBlobUrl,
   saveMediaBlob,
@@ -19,7 +21,7 @@ import { useApp } from '../hooks/useAppContext';
 import { markReturningToList } from '../motion';
 import { aiService, sanitizeAiError } from '../services/ai';
 import { triggerPhoneCall } from '../services/maps';
-import { VoiceSessionController } from '../services/voice';
+import { VoiceSessionController, VoiceStatusState } from '../services/voice';
 import {
   amountToTomanWords,
   areaToPersianWords,
@@ -147,6 +149,7 @@ export const PropertyFormScreen: React.FC = () => {
   const [voiceNoteMediaId, setVoiceNoteMediaId] = useState<string | undefined>(undefined);
   const [voiceBlobUrl, setVoiceBlobUrl] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatusState>('idle');
   const [voiceSeconds, setVoiceSeconds] = useState(0);
   const [isTranscribingAi, setIsTranscribingAi] = useState(false);
 
@@ -171,9 +174,12 @@ export const PropertyFormScreen: React.FC = () => {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const voiceCtrlRef = useRef<VoiceSessionController | null>(null);
+  const voiceTimerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const firstErrorRef = useRef<HTMLDivElement | null>(null);
+  const basicSectionRef = useRef<HTMLElement | null>(null);
+  const pricingSectionRef = useRef<HTMLElement | null>(null);
+  const ownerSectionRef = useRef<HTMLElement | null>(null);
 
   // Load Edit Record or Initialize New Code
   useEffect(() => {
@@ -586,48 +592,82 @@ export const PropertyFormScreen: React.FC = () => {
     }
   };
 
-  // Voice Dictation for Address
+  // Voice Dictation for Address (Real-time Web Speech API fa-IR + MediaRecorder + Gemini Fallback)
+  const stopVoiceTimer = () => {
+    if (voiceTimerRef.current) {
+      clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+  };
+
   const handleToggleVoiceRecord = async () => {
-    if (isRecordingVoice) {
-      await voiceCtrlRef.current?.stop();
+    if (isRecordingVoice || voiceStatus === 'listening') {
+      stopVoiceTimer();
+      voiceCtrlRef.current?.stop();
       setIsRecordingVoice(false);
       return;
     }
-    if (voiceNoteMediaId) {
-      const ok = await askConfirm({
-        title: 'ضبط مجدد توضیحات صوتی؟',
-        message: 'فایل صوتی قبلی جایگزین خواهد شد. آیا مطمئن هستید؟',
-        confirmLabel: 'بله، ضبط مجدد',
-      });
-      if (!ok) return;
+    if (voiceStatus === 'processing') {
+      return;
     }
+
     const allowed = await askPermission('microphone');
-    if (!allowed) return;
+    if (!allowed) {
+      setVoiceStatus('error');
+      showToast('مجوز میکروفون رد شده است. لطفاً دسترسی میکروفون را فعال کنید.', 'error');
+      return;
+    }
+
+    const initialAddress = exactAddress.trim();
 
     const ctrl = new VoiceSessionController({
-      onDurationTick: (sec) => setVoiceSeconds(sec),
+      initialText: initialAddress,
+      onStatusChange: (nextSt) => {
+        setVoiceStatus(nextSt);
+        setIsRecordingVoice(nextSt === 'listening');
+        if (nextSt !== 'listening') {
+          stopVoiceTimer();
+        }
+      },
       onLiveTranscript: (txt) => {
         setExactAddress(txt);
         setIsDirty(true);
       },
       onSilenceTimeout: (msg) => {
+        stopVoiceTimer();
         setIsRecordingVoice(false);
         showToast(msg, 'info');
       },
-      onRecordingComplete: async ({ blob, transcript }) => {
+      onRecordingComplete: async ({ audioDataUrl, transcript, usedFallback }) => {
+        stopVoiceTimer();
         setIsRecordingVoice(false);
-        if (blob) {
-          const saved = await saveMediaBlob(blob, `voice_${code}_${Date.now()}.webm`);
-          setVoiceNoteMediaId(saved.id);
+        if (audioDataUrl) {
+          try {
+            const res = await fetch(audioDataUrl);
+            const blob = await res.blob();
+            if (blob.size > 0) {
+              const saved = await saveMediaBlob(blob, `voice_${code}_${Date.now()}.webm`);
+              setVoiceNoteMediaId(saved.id);
+            }
+          } catch {
+            // ignore media blob save error
+          }
         }
         if (transcript) {
-          setExactAddress((prev) => (prev ? `${prev} ${transcript}` : transcript));
+          setExactAddress(transcript);
           setIsDirty(true);
+          showToast(
+            usedFallback
+              ? 'متن آدرس با هوش مصنوعی Gemini به صورت خودکار تبدیل و درج شد ✓'
+              : 'متن گفتار در فیلد آدرس درج و ویس ذخیره شد ✓',
+            'success'
+          );
         }
-        showToast('ویس توضیحات آدرس ذخیره شد', 'success');
       },
       onError: (err) => {
+        stopVoiceTimer();
         setIsRecordingVoice(false);
+        setVoiceStatus('error');
         showToast(err, 'error');
       },
     });
@@ -635,6 +675,10 @@ export const PropertyFormScreen: React.FC = () => {
     if (await ctrl.start()) {
       setVoiceSeconds(0);
       setIsRecordingVoice(true);
+      stopVoiceTimer();
+      voiceTimerRef.current = window.setInterval(() => {
+        setVoiceSeconds((prev) => prev + 1);
+      }, 1000);
     }
   };
 
@@ -775,8 +819,17 @@ export const PropertyFormScreen: React.FC = () => {
     setSubmittedOnce(true);
 
     if (validationErrors.totalCount > 0) {
-      showToast(`${toPersianDigits(validationErrors.totalCount)} مورد ناقص است`, 'error');
-      firstErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showToast(
+        `لطفاً ${toPersianDigits(validationErrors.totalCount)} فیلد ضروری مشخص‌شده را تکمیل کنید`,
+        'error'
+      );
+      if (validationErrors.basicCount > 0) {
+        basicSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.pricingCount > 0) {
+        pricingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.ownerCount > 0) {
+        ownerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -859,22 +912,40 @@ export const PropertyFormScreen: React.FC = () => {
     sessionStorage.removeItem('kelid_draft_property_new');
     setIsDirty(false);
     await refreshSnapshot();
-    showToast(`پرونده ملکی ${saved.code} با موفقیت ذخیره و تطبیق هوشمند اجرا شد ✓`, 'success');
-    navigate(`/properties/${saved.id}`);
+    showToast(`ملک ${saved.code} با موفقیت ذخیره شد ✓`, 'success');
+    markReturningToList();
+    navigate('/properties');
+  };
+
+  const handleDeleteExistingProperty = async () => {
+    if (!isEdit || !id || isViewer) return;
+    const confirmed = await askConfirm({
+      title: `حذف ملک ${code}`,
+      message: 'آیا مطمئن هستید؟ این عمل قابل بازگشت نیست.',
+      confirmLabel: 'حذف ملک',
+      danger: true,
+    });
+    if (!confirmed) return;
+    await deleteProperty(id);
+    setIsDirty(false);
+    await refreshSnapshot();
+    showToast(`ملک ${code} از سامانه حذف شد`, 'info');
+    markReturningToList();
+    navigate('/properties');
   };
 
   const handleCloseWithGuard = async () => {
     if (isDirty) {
       const discard = await askConfirm({
         title: 'خروج بدون ذخیره تغییرات؟',
-        message: 'اطلاعات واردشده در فرم هنوز ذخیره نشده‌اند. آیا از بستن فرم اطمینان دارید؟',
+        message: 'اطلاعات واردشده در فرم هنوز ذخیره نشده‌اند. آیا از انصراف و خروج اطمینان دارید؟',
         confirmLabel: 'بله، خروج',
         danger: true,
       });
       if (!discard) return;
     }
-    if (isEdit) markReturningToList();
-    navigate(-1);
+    markReturningToList();
+    navigate('/properties');
   };
 
   const permitIsExpired = Boolean(
@@ -882,9 +953,7 @@ export const PropertyFormScreen: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#050b18] text-slate-100 relative overflow-x-hidden pb-36">
-      <AmbientBackground />
-
+    <div className="min-h-screen bg-transparent text-slate-100 relative overflow-x-hidden pb-44">
       <main className="page-enter-forward relative z-10 w-full max-w-md mx-auto px-4 pt-3 space-y-4">
         {/* Top Bar & Brand Header (from Stitch Image 14.html) */}
         <header className="flex items-center justify-between pt-1 pb-2">
@@ -957,7 +1026,7 @@ export const PropertyFormScreen: React.FC = () => {
 
         {/* SECTION 1: مشخصات پایه ملک */}
         <section
-          ref={submittedOnce && validationErrors.basicCount > 0 ? firstErrorRef : undefined}
+          ref={basicSectionRef}
           className={`glass-card p-4 space-y-4 ${
             submittedOnce && validationErrors.basicCount > 0
               ? 'border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
@@ -1222,6 +1291,7 @@ export const PropertyFormScreen: React.FC = () => {
 
         {/* SECTION 2: متراژ و قیمت دوطرفه */}
         <section
+          ref={pricingSectionRef}
           className={`glass-card p-4 space-y-4 ${
             submittedOnce && validationErrors.pricingCount > 0
               ? 'border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
@@ -1999,14 +2069,29 @@ export const PropertyFormScreen: React.FC = () => {
                 <div className="space-y-2 p-3.5 rounded-xl bg-[#0a1328]/60 border border-[#d4b06a]/20">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-slate-100">۱۰. یادداشت داخلی پرونده مشاور</h3>
-                    <span className="text-[9px] px-2 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/25 font-bold">
-                      محرمانه • فقط مدیر
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <VoiceMicButton
+                        currentValue={internalNotes}
+                        append={true}
+                        variant="gold-pill"
+                        idleLabel="تایپ صوتی"
+                        onTextChange={(txt) => {
+                          setInternalNotes(txt);
+                          setIsDirty(true);
+                        }}
+                      />
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-amber-400/15 text-amber-300 border border-amber-400/25 font-bold">
+                        محرمانه • فقط مدیر
+                      </span>
+                    </div>
                   </div>
                   <textarea
                     rows={2}
                     value={internalNotes}
-                    onChange={(e) => setInternalNotes(e.target.value)}
+                    onChange={(e) => {
+                      setInternalNotes(e.target.value);
+                      setIsDirty(true);
+                    }}
                     placeholder="یادداشت‌های اختصاصی، محدودیت‌های مالک، توافقات شفاهی..."
                     className="glass-field w-full p-2.5 rounded-xl text-xs leading-relaxed text-slate-100"
                   />
@@ -2112,7 +2197,15 @@ export const PropertyFormScreen: React.FC = () => {
               <label className="block text-xs font-bold text-slate-300">
                 آدرس دقیق و توضیحات دسترسی
               </label>
-              <span className="text-[10px] text-slate-400">تایپ دستی یا ضبط ویس AI</span>
+              <span className="text-[10px] text-[#d4b06a] font-semibold">
+                {voiceStatus === 'listening'
+                  ? '🔴 در حال گوش دادن و تایپ هم‌زمان...'
+                  : voiceStatus === 'processing'
+                  ? '⏳ در حال تبدیل صدا به متن با Gemini...'
+                  : voiceStatus === 'error'
+                  ? '⚠️ خطا در ضبط صدا — مجدداً تلاش کنید'
+                  : 'تایپ دستی یا تبدیل لحظه‌ای گفتار به متن'}
+              </span>
             </div>
             <div className="relative">
               <textarea
@@ -2122,27 +2215,58 @@ export const PropertyFormScreen: React.FC = () => {
                   setExactAddress(e.target.value);
                   setIsDirty(true);
                 }}
-                placeholder="مثال: کلارآباد، خیابان دریا، لاله ۱، انتهای بن‌بست پلاک ۱۲"
-                className="glass-field w-full pr-3 pl-12 py-2.5 rounded-xl text-xs leading-relaxed text-slate-100"
+                placeholder="مثال: کلارآباد، خیابان دریا، لاله ۱، انتهای بن‌بست پلاک ۱۲ (یا روی میکروفون بزنید و صحبت کنید)"
+                className={`glass-field w-full pr-3 pl-12 py-2.5 rounded-xl text-xs leading-relaxed text-slate-100 transition-all ${
+                  voiceStatus === 'listening'
+                    ? 'border-rose-400 ring-1 ring-rose-400/40'
+                    : voiceStatus === 'processing'
+                    ? 'border-amber-400'
+                    : ''
+                }`}
               />
               <button
                 type="button"
                 onClick={handleToggleVoiceRecord}
-                title="ضبط صدا"
-                className={`absolute top-2.5 left-2.5 w-8 h-8 rounded-lg flex items-center justify-center border cursor-pointer ${
-                  isRecordingVoice
-                    ? 'bg-red-500 text-white border-red-400 animate-pulse'
-                    : 'bg-[#d4b06a]/15 text-[#d4b06a] border-[#d4b06a]/30'
+                title={
+                  voiceStatus === 'listening'
+                    ? 'در حال گوش دادن — برای توقف لمس کنید'
+                    : voiceStatus === 'processing'
+                    ? 'در حال پردازش صدا...'
+                    : 'شروع تایپ صوتی فارسی'
+                }
+                className={`absolute top-2.5 left-2.5 w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
+                  voiceStatus === 'listening'
+                    ? 'bg-rose-500 text-white border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.6)] animate-pulse'
+                    : voiceStatus === 'processing'
+                    ? 'bg-amber-500/25 text-amber-200 border-amber-400/50'
+                    : voiceStatus === 'error'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                    : 'bg-[#d4b06a]/15 text-[#d4b06a] border-[#d4b06a]/30 hover:bg-[#d4b06a]/25'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">mic</span>
+                <span
+                  className={`material-symbols-outlined text-[18px] ${
+                    voiceStatus === 'processing' ? 'animate-spin' : ''
+                  }`}
+                >
+                  {voiceStatus === 'listening'
+                    ? 'graphic_eq'
+                    : voiceStatus === 'processing'
+                    ? 'progress_activity'
+                    : voiceStatus === 'error'
+                    ? 'mic_off'
+                    : 'mic'}
+                </span>
               </button>
             </div>
 
             <div className="mt-2.5 p-3 rounded-xl bg-[#050b18]/80 border border-[#d4b06a]/25 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-200 text-[11px]">
-                  🎙️ دستیار صوتی و تبدیل ویس هوشمند (AI)
+                <span className="font-bold text-slate-200 text-[11px] flex items-center gap-1.5">
+                  <span>🎙️ دستیار صوتی فارسی (تبدیل خودکار به متن)</span>
+                  {voiceStatus === 'listening' && (
+                    <span className="inline-block w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  )}
                 </span>
                 <span className="font-mono font-bold text-[11px] text-[#d4b06a]">
                   {toPersianDigits(
@@ -2157,42 +2281,53 @@ export const PropertyFormScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleToggleVoiceRecord}
-                  className={`h-9 px-2.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                    isRecordingVoice
-                      ? 'bg-red-500 text-white animate-pulse'
-                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-300'
+                  disabled={voiceStatus === 'processing'}
+                  className={`h-9 px-2.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    voiceStatus === 'listening'
+                      ? 'bg-rose-500 text-white animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.4)]'
+                      : voiceStatus === 'processing'
+                      ? 'bg-amber-500/20 border border-amber-400/40 text-amber-200'
+                      : 'bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
                   }`}
                 >
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span>{isRecordingVoice ? 'در حال ضبط...' : 'شروع ضبط ویس'}</span>
+                  <span>
+                    {voiceStatus === 'listening'
+                      ? 'در حال گوش دادن... (توقف)'
+                      : voiceStatus === 'processing'
+                      ? 'در حال پردازش صدا...'
+                      : 'شروع ضبط و تایپ صوتی'}
+                  </span>
                 </button>
                 <button
                   type="button"
-                  disabled={!isRecordingVoice}
+                  disabled={voiceStatus !== 'listening'}
                   onClick={() => voiceCtrlRef.current?.stop()}
                   className={`h-9 px-2.5 rounded-lg border border-slate-700 text-[11px] font-bold flex items-center justify-center gap-1.5 ${
-                    isRecordingVoice
-                      ? 'bg-[#0a1328] text-slate-100 cursor-pointer'
+                    voiceStatus === 'listening'
+                      ? 'bg-[#0a1328] text-slate-100 cursor-pointer hover:border-[#d4b06a]/50'
                       : 'opacity-50 cursor-not-allowed text-slate-400'
                   }`}
                 >
-                  <span>⏹ توقف و ذخیره ویس</span>
+                  <span>⏹ توقف و ثبت متن</span>
                 </button>
               </div>
 
-              <button
-                type="button"
-                disabled={isTranscribingAi}
-                onClick={handleAiReTranscribe}
-                className="w-full h-9 rounded-lg bg-gradient-to-r from-[#9b7832] via-[#d4b06a] to-amber-300 text-[#050b18] text-xs font-black flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>✨</span>
-                <span>
-                  {isTranscribingAi
-                    ? 'در حال رونویسی هوشمند با Gemini...'
-                    : 'تبدیل هوشمند به متن (AI)'}
-                </span>
-              </button>
+              {voiceNoteMediaId && (
+                <button
+                  type="button"
+                  disabled={isTranscribingAi || voiceStatus === 'processing'}
+                  onClick={handleAiReTranscribe}
+                  className="w-full h-9 rounded-lg bg-gradient-to-r from-[#9b7832] via-[#d4b06a] to-amber-300 text-[#050b18] text-xs font-black flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>✨</span>
+                  <span>
+                    {isTranscribingAi
+                      ? 'در حال بازنویسی هوشمند با Gemini...'
+                      : 'بازنویسی مجدد ویس با هوش مصنوعی (Gemini)'}
+                  </span>
+                </button>
+              )}
 
               {voiceBlobUrl && (
                 <div className="p-2 rounded-lg bg-[#d4b06a]/10 border border-[#d4b06a]/30 flex items-center justify-between gap-2">
@@ -2473,6 +2608,7 @@ export const PropertyFormScreen: React.FC = () => {
 
         {/* SECTION 7: اطلاعات محرمانه مالک (Required ownerName + Validated ownerPhone + 2 Read-Only Summary Lines) */}
         <section
+          ref={ownerSectionRef}
           className={`glass-card p-4 space-y-4 ${
             submittedOnce && validationErrors.ownerCount > 0
               ? 'border-2 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]'
@@ -2508,6 +2644,11 @@ export const PropertyFormScreen: React.FC = () => {
                   submittedOnce && validationErrors.ownerMissing.ownerName ? 'border-red-500' : ''
                 }`}
               />
+              {submittedOnce && validationErrors.ownerMissing.ownerName && (
+                <p className="text-[11px] text-red-400 font-semibold mt-1">
+                  {validationErrors.ownerMissing.ownerName}
+                </p>
+              )}
             </div>
 
             <div>
@@ -2540,17 +2681,13 @@ export const PropertyFormScreen: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">call</span>
                 </button>
               </div>
+              {submittedOnce && validationErrors.ownerMissing.ownerPhone && (
+                <p className="text-[11px] text-red-400 font-semibold mt-1">
+                  {validationErrors.ownerMissing.ownerPhone}
+                </p>
+              )}
             </div>
           </div>
-
-          {submittedOnce &&
-            (validationErrors.ownerMissing.ownerName ||
-              validationErrors.ownerMissing.ownerPhone) && (
-              <p className="text-[11px] text-red-400 font-semibold">
-                {validationErrors.ownerMissing.ownerName ||
-                  validationErrors.ownerMissing.ownerPhone}
-              </p>
-            )}
 
           {duplicateOwnerWarning && (
             <p className="text-[11px] text-amber-300 bg-amber-500/15 border border-amber-400/30 p-2 rounded-lg">
@@ -2576,25 +2713,36 @@ export const PropertyFormScreen: React.FC = () => {
         </section>
       </main>
 
-      {/* Sticky Luxury Bottom Bar (Separate from panels with ample bottom padding above) */}
-      <nav className="fixed bottom-0 inset-x-0 z-50 p-3 bg-[#050b18]/85 backdrop-blur-xl border-t border-[#d4b06a]/30 shadow-[0_-10px_35px_rgba(2,6,18,0.75)]">
-        <div className="max-w-md mx-auto flex items-center gap-3">
+      {/* Sticky Luxury Bottom Bar (Above Bottom Nav with safe-area support) */}
+      <nav className="fixed bottom-[76px] inset-x-0 z-50 px-3 py-2.5 pb-safe bg-[#050b18]/92 backdrop-blur-xl border-t border-[#d4b06a]/35 shadow-[0_-10px_35px_rgba(2,6,18,0.85)]">
+        <div className="max-w-md mx-auto flex items-center gap-2">
           {!isViewer && (
             <button
               type="button"
               onClick={handleSaveProperty}
-              className="flex-1 h-12 rounded-2xl bg-gradient-to-r from-[#c9a45c] via-[#d4b06a] to-[#f5de9c] text-[#050b18] font-black text-sm flex items-center justify-center gap-2 shadow-[0_4px_22px_rgba(212,176,106,0.38)] cursor-pointer"
+              className="flex-1 h-12 rounded-2xl bg-gradient-to-r from-[#c9a45c] via-[#d4b06a] to-[#f5de9c] text-[#050b18] font-black text-sm flex items-center justify-center gap-1.5 shadow-[0_4px_22px_rgba(212,176,106,0.38)] active:scale-95 transition-transform cursor-pointer"
             >
               <span className="material-symbols-outlined text-[20px]">save</span>
-              <span>{isEdit ? 'ذخیره تغییرات پرونده' : 'ذخیره فایل ملکی'}</span>
+              <span>ذخیره ملک</span>
+            </button>
+          )}
+          {isEdit && !isViewer && (
+            <button
+              type="button"
+              onClick={handleDeleteExistingProperty}
+              className="px-3.5 h-12 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/50 text-rose-300 font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span>حذف ملک</span>
             </button>
           )}
           <button
             type="button"
             onClick={handleCloseWithGuard}
-            className="w-28 h-12 rounded-2xl bg-[#0a1328]/90 border border-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            className="px-3.5 h-12 rounded-2xl bg-[#0a1328]/90 border border-slate-700 text-slate-300 font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer shrink-0"
           >
-            <span>✕ بستن</span>
+            <span className="material-symbols-outlined text-[17px]">arrow_forward</span>
+            <span>انصراف</span>
           </button>
         </div>
       </nav>

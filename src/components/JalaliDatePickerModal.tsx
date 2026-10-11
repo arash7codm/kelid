@@ -58,11 +58,11 @@ export const JalaliDatePickerModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-[140] bg-black/75 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-[140] bg-[#050a16]/75 backdrop-blur-xl flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="sheet-enter-up w-full max-w-sm rounded-3xl bg-[#0a1328]/95 border border-[#f1cb83]/35 p-5 shadow-2xl space-y-4 text-right"
+        className="sheet-enter-up w-full max-w-sm rounded-3xl crystal-glass border border-[#f1cb83]/35 p-5 shadow-2xl space-y-4 text-right"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-2.5">

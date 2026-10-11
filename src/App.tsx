@@ -127,91 +127,96 @@ const ScrollController: React.FC = () => {
 
 const AppShell: React.FC = () => {
   const location = useLocation();
-  const { loading } = useApp();
+  const { loading, isQuickCreateOpen, currentUser } = useApp();
   const { isInstallable, install } = usePWAInstall();
 
-  const hasInternalNav =
-    location.pathname === '/' ||
-    location.pathname === '/dashboard' ||
-    location.pathname === '/properties' ||
-    location.pathname === '/settings' ||
-    location.pathname === '/settings/health';
+  const isPropertyDetailRoute =
+    /^\/properties\/[^/]+$/.test(location.pathname) && location.pathname !== '/properties/new';
 
-  const hasInternalAmbient =
-    hasInternalNav || location.pathname.startsWith('/properties/');
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#050C18] flex flex-col items-center justify-center gap-3 select-none">
-        <KelidLogoIcon className="w-16 h-16" />
-        <span className="text-sm font-extrabold text-[#f1cb83] tracking-tight">کلید</span>
-      </div>
-    );
-  }
+  const quickMenuBlurActive = isQuickCreateOpen && currentUser.role !== 'بیننده';
 
   return (
-    <div className="min-h-screen relative text-slate-100 select-none overflow-x-hidden">
+    <div className="min-h-screen relative bg-transparent text-[#dae2ff] select-none overflow-x-hidden">
       <ScrollController />
-      {!hasInternalAmbient && <AmbientBackground />}
+      {/* پس‌زمینه سراسری واحد — فقط یک‌بار در ریشه‌ی برنامه ساخته می‌شود و هرگز ریست نمی‌شود */}
+      <AmbientBackground />
 
-      {isInstallable && location.pathname === '/dashboard' && (
-        <div className="relative z-40 max-w-md mx-auto px-4 pt-2">
-          <div className="glass-card rounded-2xl p-2.5 border border-[#f1cb83]/45 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <KelidLogoIcon className="w-7 h-7" />
-              <span className="text-[11px] font-bold text-white">
-                نصب نسخه وب‌اپلیکیشن (PWA) کلید روی صفحه اصلی گوشی
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={install}
-              className="gold-pill-btn px-3 py-1 rounded-lg text-[11px] font-extrabold shrink-0 cursor-pointer"
-            >
-              نصب برنامه
-            </button>
-          </div>
+      {loading ? (
+        <div className="min-h-screen relative z-10 bg-transparent flex flex-col items-center justify-center gap-3 select-none">
+          <KelidLogoIcon className="w-16 h-16" />
+          <span className="text-sm font-extrabold text-[#f1cb83] tracking-tight">کلید</span>
         </div>
+      ) : (
+        <>
+          <div
+            id="app-route-content"
+            className="relative z-10 transition-all duration-500"
+            style={{
+              filter: quickMenuBlurActive ? 'blur(5px)' : 'none',
+              opacity: quickMenuBlurActive ? 0.7 : 1,
+            }}
+          >
+            {isInstallable && location.pathname === '/dashboard' && (
+              <div className="relative z-40 max-w-lg mx-auto px-5 pt-2">
+                <div className="crystal-glass rounded-xl p-2.5 border border-[#f1cb83]/45 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <KelidLogoIcon className="w-7 h-7" />
+                    <span className="text-[11px] font-bold text-white">
+                      نصب نسخه وب‌اپلیکیشن (PWA) کلید روی صفحه اصلی گوشی
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={install}
+                    className="gold-pill-btn px-3 py-1 rounded-lg text-[11px] font-extrabold shrink-0 cursor-pointer"
+                  >
+                    نصب برنامه
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardScreen />} />
+
+              {/* Properties Routes */}
+              <Route path="/properties" element={<PropertiesListScreen />} />
+              <Route path="/properties/new" element={<PropertyFormScreen />} />
+              <Route path="/properties/:id" element={<PropertyDetailScreen />} />
+              <Route path="/properties/:id/edit" element={<PropertyFormScreen />} />
+
+              {/* Applicants Routes */}
+              <Route path="/applicants" element={<ApplicantsListScreen />} />
+              <Route path="/applicants/new" element={<ApplicantFormScreen />} />
+              <Route path="/applicants/:id/edit" element={<ApplicantFormScreen />} />
+
+              {/* Collaborators Routes */}
+              <Route path="/collaborators" element={<CollaboratorsListScreen />} />
+              <Route path="/collaborators/new" element={<CollaboratorFormScreen />} />
+              <Route path="/collaborators/:id/edit" element={<CollaboratorFormScreen />} />
+
+              {/* Reminders & Smart Inbox Routes */}
+              <Route path="/reminders" element={<RemindersScreen />} />
+              <Route path="/reminders/new" element={<RemindersScreen />} />
+              <Route path="/inbox" element={<RemindersScreen />} />
+
+              {/* Settings & Device Health Routes */}
+              <Route path="/settings" element={<SettingsScreen />} />
+              <Route path="/settings/health" element={<DeviceHealthScreen />} />
+
+              {/* Voice Assistant & Global Smart Search Routes */}
+              <Route path="/voice-assistant" element={<VoiceAssistantScreen />} />
+              <Route path="/search" element={<SearchScreen />} />
+
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </div>
+
+          {!isPropertyDetailRoute && <BottomNavAndQuickMenu />}
+        </>
       )}
-
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardScreen />} />
-
-        {/* Properties Routes */}
-        <Route path="/properties" element={<PropertiesListScreen />} />
-        <Route path="/properties/new" element={<PropertyFormScreen />} />
-        <Route path="/properties/:id" element={<PropertyDetailScreen />} />
-        <Route path="/properties/:id/edit" element={<PropertyFormScreen />} />
-
-        {/* Applicants Routes */}
-        <Route path="/applicants" element={<ApplicantsListScreen />} />
-        <Route path="/applicants/new" element={<ApplicantFormScreen />} />
-        <Route path="/applicants/:id/edit" element={<ApplicantFormScreen />} />
-
-        {/* Collaborators Routes */}
-        <Route path="/collaborators" element={<CollaboratorsListScreen />} />
-        <Route path="/collaborators/new" element={<CollaboratorFormScreen />} />
-        <Route path="/collaborators/:id/edit" element={<CollaboratorFormScreen />} />
-
-        {/* Reminders & Smart Inbox Routes */}
-        <Route path="/reminders" element={<RemindersScreen />} />
-        <Route path="/reminders/new" element={<RemindersScreen />} />
-        <Route path="/inbox" element={<RemindersScreen />} />
-
-        {/* Settings & Device Health Routes */}
-        <Route path="/settings" element={<SettingsScreen />} />
-        <Route path="/settings/health" element={<DeviceHealthScreen />} />
-
-        {/* Voice Assistant & Global Smart Search Routes */}
-        <Route path="/voice-assistant" element={<VoiceAssistantScreen />} />
-        <Route path="/search" element={<SearchScreen />} />
-
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-
-      {!hasInternalNav && <BottomNavAndQuickMenu />}
     </div>
   );
 };

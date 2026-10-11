@@ -2,19 +2,24 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
 import { KelidLogoIcon } from '../components/Layout';
-import { completeReminderWithResult, saveReminder } from '../db/repositories';
-import { db, ReminderCategory, ReminderRecord } from '../db/schema';
+import { SmartVoiceReminderSheet } from '../components/SmartVoiceReminderSheet';
+import {
+  completeReminderWithResult,
+  deleteReminder,
+  getMediaBlobUrl,
+  saveReminder,
+} from '../db/repositories';
+import { db, ReminderRecord } from '../db/schema';
 import { useApp } from '../hooks/useAppContext';
 import { runWithViewTransition } from '../motion';
-import { aiService } from '../services/ai';
 import {
   createOrUpdateGoogleCalendarEvent,
   exportReminderAsIcs,
 } from '../services/calendar';
 import { triggerPhoneCall } from '../services/maps';
-import { VoiceSessionController } from '../services/voice';
 import {
   addDaysToJalali,
+  compareJalaliDates,
   getTodayJalali,
   isJalaliDateOverdue,
   toPersianDigits,
@@ -32,6 +37,7 @@ export const RemindersScreen: React.FC = () => {
     setHighlightedReminderId,
     refreshSnapshot,
     showToast,
+    askConfirm,
     askPermission,
   } = useApp();
 
@@ -45,26 +51,27 @@ export const RemindersScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>(inboxInitialTab || 'today');
   const [selectedDayOffset, setSelectedDayOffset] = useState<number>(0);
   const [voiceQuickInput, setVoiceQuickInput] = useState('');
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
   const [isFullCalendarOpen, setIsFullCalendarOpen] = useState(false);
   const [rescheduleReminder, setRescheduleReminder] = useState<ReminderRecord | null>(null);
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
 
-  // New Reminder Modal State
-  const [newTitle, setNewTitle] = useState('');
-  const [newDesc, setNewDesc] = useState('');
-  const [newDate, setNewDate] = useState(getTodayJalali(true));
-  const [newTime, setNewTime] = useState('11:00');
-  const [newCategory, setNewCategory] = useState<ReminderCategory>('phone');
-  const [newPriority, setNewPriority] = useState<'urgent' | 'normal' | 'low'>('normal');
-  const [newLinkedApplicantId, setNewLinkedApplicantId] = useState('');
-  const [newLinkedPropertyId, setNewLinkedPropertyId] = useState('');
-  const [newLinkedCollaboratorId, setNewLinkedCollaboratorId] = useState('');
-  const [isNewDatePickerOpen, setIsNewDatePickerOpen] = useState(false);
+  // Smart Voice Reminder Bottom Sheet State
+  const [isVoiceSheetOpen, setIsVoiceSheetOpen] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<ReminderRecord | null>(null);
+  const [preselectedPropertyId, setPreselectedPropertyId] = useState<string | undefined>(undefined);
+  const [preselectedApplicantId, setPreselectedApplicantId] = useState<string | undefined>(
+    undefined
+  );
+  const [preselectedCollaboratorId, setPreselectedCollaboratorId] = useState<string | undefined>(
+    undefined
+  );
+  const [sheetInitialTranscript, setSheetInitialTranscript] = useState<string | undefined>(
+    undefined
+  );
 
-  const voiceRef = useRef<VoiceSessionController | null>(null);
+  // Card Audio Player State
+  const [playingReminderId, setPlayingReminderId] = useState<string | null>(null);
+  const cardAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (inboxInitialTab) {
@@ -73,40 +80,39 @@ export const RemindersScreen: React.FC = () => {
   }, [inboxInitialTab]);
 
   useEffect(() => {
+    return () => {
+      if (cardAudioRef.current) {
+        cardAudioRef.current.pause();
+        cardAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  // Open sheet automatically when routed to /reminders/new or with query params
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const appId = params.get('newForApplicant');
-    const colId = params.get('newForCollaborator');
-    const propId = params.get('newForProperty');
+    const appId = params.get('newForApplicant') || undefined;
+    const colId = params.get('newForCollaborator') || undefined;
+    const propId = params.get('newForProperty') || undefined;
 
     if (location.pathname === '/reminders/new' || appId || colId || propId) {
-      if (appId) {
-        const app = applicants.find((a) => a.id === appId);
-        if (app) {
-          setNewTitle(`تماس و پیگیری متقاضی — ${app.name}`);
-          setNewDesc(`معرفی فایل‌های منتخب منطبق با بودجه متقاضی (${app.code})`);
-          setNewLinkedApplicantId(app.id);
-          setNewCategory('phone');
-        }
-      } else if (colId) {
-        const col = collaborators.find((c) => c.id === colId);
-        if (col) {
-          setNewTitle(`استعلام فایل جدید — ${col.name}`);
-          setNewDesc(`پیگیری فایل‌های مشترک از ${col.agencyName || col.role} (${col.code})`);
-          setNewLinkedCollaboratorId(col.id);
-          setNewCategory('phone');
-        }
-      } else if (propId) {
-        const prop = properties.find((p) => p.id === propId);
-        if (prop) {
-          setNewTitle(`هماهنگی بازدید ملک — ${prop.title}`);
-          setNewDesc(`پیگیری وضعیت و بازدید ملک کد ${prop.code}`);
-          setNewLinkedPropertyId(prop.id);
-          setNewCategory('visit');
-        }
-      }
-      setIsNewModalOpen(true);
+      setEditingReminder(null);
+      setPreselectedApplicantId(appId);
+      setPreselectedCollaboratorId(colId);
+      setPreselectedPropertyId(propId);
+      setSheetInitialTranscript(undefined);
+      setIsVoiceSheetOpen(true);
     }
-  }, [location.pathname, location.search, applicants, collaborators, properties]);
+  }, [location.pathname, location.search]);
+
+  // Smooth scroll to highlighted reminder when redirected from Success View
+  useEffect(() => {
+    if (!highlightedReminderId) return;
+    const el = document.getElementById(`reminder-card-${highlightedReminderId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlightedReminderId, reminders]);
 
   const todayJalali = getTodayJalali(true);
 
@@ -130,21 +136,37 @@ export const RemindersScreen: React.FC = () => {
     });
   }, [todayJalali, reminders]);
 
+  const sortRemindersByPriorityAndTime = (list: ReminderRecord[]) => {
+    const prioWeight: Record<string, number> = { urgent: 0, normal: 1, low: 2 };
+    return [...list].sort((a, b) => {
+      const dateCmp = compareJalaliDates(a.jalaliDate, b.jalaliDate);
+      if (dateCmp !== 0) return dateCmp;
+      const pwA = prioWeight[a.priority] ?? 1;
+      const pwB = prioWeight[b.priority] ?? 1;
+      if (pwA !== pwB) return pwA - pwB;
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  };
+
   const overdueReminders = useMemo(
     () =>
-      reminders.filter(
-        (r) => r.status !== 'done' && isJalaliDateOverdue(r.jalaliDate)
+      sortRemindersByPriorityAndTime(
+        reminders.filter(
+          (r) => r.status !== 'done' && isJalaliDateOverdue(r.jalaliDate)
+        )
       ),
     [reminders]
   );
 
   const todayReminders = useMemo(() => {
     const targetDate = addDaysToJalali(todayJalali, selectedDayOffset, true);
-    return reminders.filter(
-      (r) =>
-        r.status !== 'done' &&
-        (r.jalaliDate === targetDate ||
-          (!isJalaliDateOverdue(r.jalaliDate) && selectedDayOffset === 0))
+    return sortRemindersByPriorityAndTime(
+      reminders.filter(
+        (r) =>
+          r.status !== 'done' &&
+          (r.jalaliDate === targetDate ||
+            (!isJalaliDateOverdue(r.jalaliDate) && selectedDayOffset === 0))
+      )
     );
   }, [reminders, todayJalali, selectedDayOffset]);
 
@@ -153,140 +175,120 @@ export const RemindersScreen: React.FC = () => {
       return overdueReminders;
     }
     if (activeTab === 'calls') {
-      return reminders.filter((r) => r.status !== 'done' && r.categories.includes('phone'));
+      return sortRemindersByPriorityAndTime(
+        reminders.filter((r) => r.status !== 'done' && r.categories.includes('phone'))
+      );
     }
     if (activeTab === 'visits') {
-      return reminders.filter((r) => r.status !== 'done' && r.categories.includes('visit'));
+      return sortRemindersByPriorityAndTime(
+        reminders.filter((r) => r.status !== 'done' && r.categories.includes('visit'))
+      );
     }
     if (activeTab === 'checks_contracts') {
-      return reminders.filter((r) => r.status !== 'done' && r.categories.includes('finance'));
+      return sortRemindersByPriorityAndTime(
+        reminders.filter(
+          (r) =>
+            r.status !== 'done' &&
+            (r.categories.includes('finance') ||
+              r.categories.includes('inquiry') ||
+              r.categories.includes('documents') ||
+              r.categories.includes('meeting'))
+        )
+      );
     }
     if (activeTab === 'done') {
-      return reminders.filter((r) => r.status === 'done');
+      return sortRemindersByPriorityAndTime(reminders.filter((r) => r.status === 'done'));
     }
     return todayReminders;
   }, [activeTab, overdueReminders, reminders, todayReminders]);
 
   const getLinkedLabel = (rem: ReminderRecord) => {
-    if (rem.linkedApplicantId) {
-      const a = applicants.find((x) => x.id === rem.linkedApplicantId);
-      if (a) return `متقاضی: ${a.name} (${a.code})`;
-    }
+    const parts: string[] = [];
     if (rem.linkedPropertyId) {
       const p = properties.find((x) => x.id === rem.linkedPropertyId);
-      if (p) return `ملک: ${p.title} (${p.code})`;
+      if (p) parts.push(`ملک: ${p.title} (${p.code})`);
+    }
+    if (rem.linkedApplicantId) {
+      const a = applicants.find((x) => x.id === rem.linkedApplicantId);
+      if (a) parts.push(`متقاضی: ${a.name} (${a.code})`);
     }
     if (rem.linkedCollaboratorId) {
       const c = collaborators.find((x) => x.id === rem.linkedCollaboratorId);
-      if (c) return `همکار: ${c.name} (${c.code})`;
+      if (c) parts.push(`همکار: ${c.name} (${c.code})`);
     }
-    return rem.customLinks[0];
+    if (parts.length > 0) return parts.join(' • ');
+    return rem.customLinks?.[0];
   };
 
-  const handleVoiceReminderExtract = async (inputText?: string) => {
-    const textToParse = (inputText ?? voiceQuickInput).trim();
-    if (!textToParse) {
-      if (isVoiceActive) {
-        voiceRef.current?.stop();
-        setIsVoiceActive(false);
-        return;
-      }
-      const allowed = await askPermission('microphone');
-      if (!allowed) return;
-      setIsVoiceActive(true);
-      const session = new VoiceSessionController({
-        onLiveTranscript: (t) => setVoiceQuickInput(t),
-        onSilenceTimeout: (msg) => {
-          setIsVoiceActive(false);
-          showToast(msg, 'info');
-        },
-        onRecordingComplete: async (res) => {
-          setIsVoiceActive(false);
-          if (res.transcript.trim()) {
-            await handleVoiceReminderExtract(res.transcript);
-          }
-        },
-        onError: (err) => {
-          setIsVoiceActive(false);
-          showToast(err, 'error');
-        },
-      });
-      voiceRef.current = session;
-      await session.start();
-      return;
-    }
-
-    setIsProcessingVoice(true);
-    try {
-      const knownEntities = [
-        ...applicants.map((a) => ({ code: a.code, name: a.name })),
-        ...properties.map((p) => ({ code: p.code, name: p.title })),
-        ...collaborators.map((c) => ({ code: c.code, name: c.name })),
-      ];
-      const extracted = await aiService.extractReminderFromTranscript(
-        textToParse,
-        knownEntities
-      );
-
-      await saveReminder({
-        title: extracted.title,
-        transcript: textToParse,
-        jalaliDate: extracted.jalaliDate || addDaysToJalali(todayJalali, 1, true),
-        time: extracted.time || '11:00',
-        timeDisplay: extracted.timeDisplay || '۱۱:۰۰ صبح',
-        priority: extracted.priority || 'normal',
-        categories: extracted.categories.length ? extracted.categories : ['phone'],
-        status: 'pending',
-        customLinks: extracted.matchedCodes,
-        smsNotification: true,
-        registerInCartable: true,
-        calendarStatus: 'none',
-        syncStatus: 'local',
-        aiFilledFields: ['title', 'jalaliDate', 'time'],
-        aiSummary: extracted.summary,
-      });
-
-      setVoiceQuickInput('');
-      await refreshSnapshot();
-      showToast(`یادآور هوشمند «${extracted.title}» ثبت شد.`, 'success');
-    } finally {
-      setIsProcessingVoice(false);
-    }
+  const openNewSmartVoiceSheet = (initialText?: string) => {
+    setEditingReminder(null);
+    setPreselectedPropertyId(undefined);
+    setPreselectedApplicantId(undefined);
+    setPreselectedCollaboratorId(undefined);
+    setSheetInitialTranscript(initialText);
+    setIsVoiceSheetOpen(true);
   };
 
-  const handleSaveManualReminder = async () => {
-    if (!newTitle.trim()) {
-      showToast('لطفاً عنوان یادآور را وارد کنید.', 'error');
-      return;
-    }
+  const handleOpenEditReminder = (rem: ReminderRecord) => {
+    setEditingReminder(rem);
+    setPreselectedPropertyId(undefined);
+    setPreselectedApplicantId(undefined);
+    setPreselectedCollaboratorId(undefined);
+    setSheetInitialTranscript(undefined);
+    setIsVoiceSheetOpen(true);
+  };
 
-    await saveReminder({
-      title: newTitle.trim(),
-      transcript: newDesc.trim() || 'ثبت شده در تقویم هوشمند کلید',
-      jalaliDate: newDate,
-      time: newTime,
-      timeDisplay: `${toPersianDigits(newTime)}`,
-      priority: newPriority,
-      categories: [newCategory],
-      status: 'pending',
-      linkedApplicantId: newLinkedApplicantId || undefined,
-      linkedPropertyId: newLinkedPropertyId || undefined,
-      linkedCollaboratorId: newLinkedCollaboratorId || undefined,
-      customLinks: [],
-      smsNotification: true,
-      registerInCartable: true,
-      calendarStatus: 'none',
-      syncStatus: 'local',
-      aiFilledFields: [],
+  const handleDeleteReminderCard = async (rem: ReminderRecord) => {
+    const confirmed = await askConfirm({
+      title: 'حذف یادآور و فایل صوتی',
+      message: `آیا از حذف یادآور «${rem.title}» اطمینان دارید؟ فایل صوتی آرشیوشده نیز از حافظه پاک خواهد شد.`,
+      confirmLabel: 'حذف یادآور',
+      cancelLabel: 'انصراف',
+      danger: true,
     });
+    if (!confirmed) return;
 
+    if (playingReminderId === rem.id && cardAudioRef.current) {
+      cardAudioRef.current.pause();
+      setPlayingReminderId(null);
+    }
+
+    await deleteReminder(rem.id);
     await refreshSnapshot();
-    setIsNewModalOpen(false);
-    setNewTitle('');
-    setNewDesc('');
-    showToast('یادآور جدید با موفقیت در تقویم ثبت شد.', 'success');
-    if (location.pathname === '/reminders/new' || location.search) {
-      navigate('/reminders', { replace: true });
+    showToast('یادآور و فایل صوتی مرتبط با موفقیت حذف شد.', 'info');
+  };
+
+  const handleTogglePlayCardAudio = async (rem: ReminderRecord) => {
+    if (playingReminderId === rem.id && cardAudioRef.current) {
+      cardAudioRef.current.pause();
+      setPlayingReminderId(null);
+      return;
+    }
+
+    if (cardAudioRef.current) {
+      cardAudioRef.current.pause();
+      cardAudioRef.current = null;
+    }
+
+    if (!rem.audioMediaId) return;
+    const url = await getMediaBlobUrl(rem.audioMediaId);
+    if (!url) {
+      showToast('فایل صوتی این یادآور در حافظه یافت نشد.', 'error');
+      return;
+    }
+
+    const audio = new Audio(url);
+    cardAudioRef.current = audio;
+    audio.onended = () => setPlayingReminderId(null);
+    audio.onerror = () => {
+      setPlayingReminderId(null);
+      showToast('خطا در پخش فایل صوتی', 'error');
+    };
+    try {
+      await audio.play();
+      setPlayingReminderId(rem.id);
+    } catch {
+      setPlayingReminderId(null);
     }
   };
 
@@ -383,9 +385,9 @@ export const RemindersScreen: React.FC = () => {
   };
 
   return (
-    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-28">
-      {/* Header Section (Exact match to Image 18.html) */}
-      <header className="pt-5 px-4 pb-3 sticky top-0 z-30 bg-[#050b18]/85 backdrop-blur-xl border-b border-white/10">
+    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-28 bg-transparent">
+      {/* Header Section */}
+      <header className="pt-5 px-4 pb-3 sticky top-0 z-30 bg-[#050b18]/65 backdrop-blur-2xl border-b border-white/10">
         <div className="flex items-center justify-between mb-3.5">
           <div className="flex items-center gap-2.5">
             <div className="relative flex items-center justify-center">
@@ -402,7 +404,7 @@ export const RemindersScreen: React.FC = () => {
                 یادآورها و پیگیری‌های هوشمند
               </h1>
               <p className="text-[11px] text-slate-300 font-medium">
-                تقویم، آلارم و صندوق پیام‌های سیستمی
+                تقویم، آلارم و دستیار صوتی هوش مصنوعی
               </p>
             </div>
           </div>
@@ -410,10 +412,10 @@ export const RemindersScreen: React.FC = () => {
           {!isViewer && (
             <button
               type="button"
-              onClick={() => setIsNewModalOpen(true)}
-              className="gold-pill-btn px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-extrabold active:scale-95 transition-transform cursor-pointer"
+              onClick={() => openNewSmartVoiceSheet()}
+              className="gold-pill-btn px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-xs font-extrabold active:scale-95 transition-transform cursor-pointer shadow-[0_0_20px_rgba(241,203,131,0.35)]"
             >
-              <span className="material-symbols-outlined text-base font-bold">add_alert</span>
+              <span className="material-symbols-outlined text-base font-bold">mic</span>
               <span>یادآور جدید</span>
             </button>
           )}
@@ -487,38 +489,43 @@ export const RemindersScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Voice Reminder Input Bar */}
-        <div className="flex items-center gap-2 mb-3">
-          <div className="flex-1 glass-input rounded-xl px-3 py-2 flex items-center gap-2 border border-white/15 focus-within:border-[#f1cb83]/60">
-            <span className="material-symbols-outlined text-[#f1cb83] text-lg">
-              record_voice_over
-            </span>
-            <input
-              type="text"
-              value={voiceQuickInput}
-              onChange={(e) => setVoiceQuickInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleVoiceReminderExtract();
-              }}
-              placeholder="یادآور صوتی: «فردا ساعت ۱۱ تماس با رضایی برای زمین کلارآباد...»"
-              className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-medium"
-            />
-            <button
-              type="button"
-              disabled={isProcessingVoice}
-              onClick={() => handleVoiceReminderExtract()}
-              className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 cursor-pointer ${
-                isVoiceActive
-                  ? 'bg-rose-500 text-white border-rose-400 animate-pulse'
-                  : 'bg-[#f1cb83]/20 border-[#f1cb83]/40 text-[#f1cb83]'
-              }`}
-            >
-              <span className="material-symbols-outlined text-base">
-                {voiceQuickInput.trim() ? 'send' : 'mic'}
+        {/* Quick Voice Reminder Input Bar -> Opens Smart Voice Reminder Sheet */}
+        {!isViewer && (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex-1 glass-input rounded-xl px-3 py-2 flex items-center gap-2 border border-white/15 focus-within:border-[#f1cb83]/60">
+              <span className="material-symbols-outlined text-[#f1cb83] text-lg">
+                record_voice_over
               </span>
-            </button>
+              <input
+                type="text"
+                value={voiceQuickInput}
+                onChange={(e) => setVoiceQuickInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const txt = voiceQuickInput.trim();
+                    setVoiceQuickInput('');
+                    openNewSmartVoiceSheet(txt || undefined);
+                  }
+                }}
+                placeholder="یادآور صوتی هوشمند: «فردا ساعت ۱۱ تماس با رضوان برای پرونده F-002...»"
+                className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-medium"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const txt = voiceQuickInput.trim();
+                  setVoiceQuickInput('');
+                  openNewSmartVoiceSheet(txt || undefined);
+                }}
+                className="w-7 h-7 rounded-lg border bg-[#f1cb83]/20 border-[#f1cb83]/40 text-[#f1cb83] hover:bg-[#f1cb83]/30 flex items-center justify-center shrink-0 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">
+                  {voiceQuickInput.trim() ? 'auto_awesome' : 'mic'}
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Category Filter Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -531,7 +538,7 @@ export const RemindersScreen: React.FC = () => {
             },
             { id: 'calls', label: 'تماس‌ها' },
             { id: 'visits', label: 'بازدید حضوری' },
-            { id: 'checks_contracts', label: 'چک و قرارداد' },
+            { id: 'checks_contracts', label: 'چک، سند و قرارداد' },
             {
               id: 'smart_matches',
               label: `تطبیق‌های هوشمند (${toPersianDigits(matchLinks.length)})`,
@@ -585,13 +592,15 @@ export const RemindersScreen: React.FC = () => {
             {overdueReminders.map((rem) => {
               const isHighlighted = highlightedReminderId === rem.id;
               const linkedLabel = getLinkedLabel(rem);
+              const isPlaying = playingReminderId === rem.id;
               return (
                 <article
+                  id={`reminder-card-${rem.id}`}
                   key={rem.id}
                   onClick={() => setHighlightedReminderId(null)}
-                  className={`glass-card rounded-2xl p-4 relative overflow-hidden border ${
+                  className={`glass-card rounded-2xl p-4 relative overflow-hidden border transition-all ${
                     isHighlighted
-                      ? 'border-[#f1cb83] shadow-[0_0_25px_rgba(241,203,131,0.35)]'
+                      ? 'border-[#f1cb83] shadow-[0_0_25px_rgba(241,203,131,0.45)] ring-2 ring-[#f1cb83]'
                       : 'border-rose-500/40 shadow-[0_10px_30px_rgba(244,63,94,0.12)]'
                   }`}
                 >
@@ -608,13 +617,56 @@ export const RemindersScreen: React.FC = () => {
                         phone_missed
                       </span>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-sm font-extrabold text-white">{rem.title}</h3>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-extrabold text-white truncate">{rem.title}</h3>
+                        {!isViewer && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              title="ویرایش یادآور"
+                              onClick={() => handleOpenEditReminder(rem)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-[#f1cb83]/20 text-slate-300 hover:text-[#f1cb83] flex items-center justify-center cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-sm">edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              title="حذف یادآور"
+                              onClick={() => void handleDeleteReminderCard(rem)}
+                              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 flex items-center justify-center cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-300 mt-1 leading-relaxed">
                         {rem.transcript}
                       </p>
                     </div>
                   </div>
+
+                  {rem.audioMediaId && (
+                    <div className="mb-3 p-2 rounded-xl bg-[#050b17]/70 border border-[#f1cb83]/25 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => void handleTogglePlayCardAudio(rem)}
+                        className="flex items-center gap-2 text-xs font-bold text-[#f1cb83] cursor-pointer"
+                      >
+                        <span className="w-7 h-7 rounded-full bg-[#f1cb83]/20 border border-[#f1cb83]/40 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-base">
+                            {isPlaying ? 'pause' : 'play_arrow'}
+                          </span>
+                        </span>
+                        <span>
+                          {isPlaying
+                            ? 'در حال پخش یادداشت صوتی...'
+                            : `پخش یادداشت صوتی (${toPersianDigits(rem.audioDurationSec || 10)} ثانیه)`}
+                        </span>
+                      </button>
+                    </div>
+                  )}
 
                   {linkedLabel && (
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -697,17 +749,28 @@ export const RemindersScreen: React.FC = () => {
               filteredList.map((rem) => {
                 const isHighlighted = highlightedReminderId === rem.id;
                 const linkedLabel = getLinkedLabel(rem);
+                const isPlaying = playingReminderId === rem.id;
                 const categoryIcon = rem.categories.includes('visit')
                   ? 'tour'
                   : rem.categories.includes('finance')
                   ? 'payments'
+                  : rem.categories.includes('inquiry')
+                  ? 'description'
+                  : rem.categories.includes('documents')
+                  ? 'folder_shared'
+                  : rem.categories.includes('meeting')
+                  ? 'groups'
                   : 'phone_callback';
 
                 return (
                   <article
+                    id={`reminder-card-${rem.id}`}
                     key={rem.id}
-                    className={`glass-card gold-border-glow rounded-2xl p-4 relative overflow-hidden ${
-                      isHighlighted ? 'ring-2 ring-[#f1cb83]' : ''
+                    onClick={() => setHighlightedReminderId(null)}
+                    className={`glass-card gold-border-glow rounded-2xl p-4 relative overflow-hidden transition-all ${
+                      isHighlighted
+                        ? 'ring-2 ring-[#f1cb83] shadow-[0_0_28px_rgba(241,203,131,0.4)]'
+                        : ''
                     }`}
                   >
                     <div className="absolute top-0 left-0 bg-[#f1cb83]/20 border-b border-r border-[#f1cb83]/40 px-2.5 py-0.5 rounded-br-xl flex items-center gap-1">
@@ -720,18 +783,55 @@ export const RemindersScreen: React.FC = () => {
                     </div>
 
                     <div className="flex items-start justify-between gap-2 mb-3 pt-2">
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
                         <div className="w-10 h-10 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/40 flex items-center justify-center shrink-0">
                           <span className="material-symbols-outlined text-[#f1cb83] text-xl">
                             {categoryIcon}
                           </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold">
-                              {rem.priority === 'urgent' ? 'فوری' : 'مهم'}
-                            </span>
-                            <h3 className="text-sm font-extrabold text-white">{rem.title}</h3>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                  rem.priority === 'urgent'
+                                    ? 'bg-rose-500/20 border-rose-400/40 text-rose-300'
+                                    : rem.priority === 'low'
+                                    ? 'bg-sky-500/20 border-sky-400/40 text-sky-300'
+                                    : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                                }`}
+                              >
+                                {rem.priority === 'urgent'
+                                  ? 'فوری و بحرانی'
+                                  : rem.priority === 'low'
+                                  ? 'کم‌اهمیت'
+                                  : 'عادی'}
+                              </span>
+                              <h3 className="text-sm font-extrabold text-white truncate">
+                                {rem.title}
+                              </h3>
+                            </div>
+
+                            {!isViewer && (
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  title="ویرایش یادآور"
+                                  onClick={() => handleOpenEditReminder(rem)}
+                                  className="w-7 h-7 rounded-lg bg-white/5 hover:bg-[#f1cb83]/20 text-slate-300 hover:text-[#f1cb83] flex items-center justify-center cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  title="حذف یادآور"
+                                  onClick={() => void handleDeleteReminderCard(rem)}
+                                  className="w-7 h-7 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 flex items-center justify-center cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <p className="text-xs text-slate-300 mt-1 leading-relaxed">
                             {rem.transcript}
@@ -740,18 +840,41 @@ export const RemindersScreen: React.FC = () => {
                       </div>
                     </div>
 
+                    {rem.audioMediaId && (
+                      <div className="mb-3 p-2 rounded-xl bg-[#050b17]/70 border border-[#f1cb83]/25 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => void handleTogglePlayCardAudio(rem)}
+                          className="flex items-center gap-2 text-xs font-bold text-[#f1cb83] cursor-pointer"
+                        >
+                          <span className="w-7 h-7 rounded-full bg-[#f1cb83]/20 border border-[#f1cb83]/40 flex items-center justify-center">
+                            <span className="material-symbols-outlined text-base">
+                              {isPlaying ? 'pause' : 'play_arrow'}
+                            </span>
+                          </span>
+                          <span>
+                            {isPlaying
+                              ? 'در حال پخش یادداشت صوتی...'
+                              : `پخش یادداشت صوتی (${toPersianDigits(
+                                  rem.audioDurationSec || 10
+                                )} ثانیه)`}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
                     {linkedLabel && (
                       <div className="bg-[#080f20]/70 rounded-xl p-2.5 border border-white/10 mb-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-[11px] text-slate-200">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-200 truncate">
                           <span className="material-symbols-outlined text-sm text-[#f1cb83]">
                             folder_special
                           </span>
-                          <span>{linkedLabel}</span>
+                          <span className="truncate">{linkedLabel}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => handleNavigateLinkedEntity(rem)}
-                          className="text-[10px] text-[#f1cb83] font-bold hover:underline cursor-pointer"
+                          className="text-[10px] text-[#f1cb83] font-bold hover:underline shrink-0 cursor-pointer"
                         >
                           مشاهده پرونده
                         </button>
@@ -794,7 +917,7 @@ export const RemindersScreen: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setRescheduleReminder(rem)}
-                          className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          className="w-[80.4375px] px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/15 text-slate-200 text-[11px] font-bold flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-xs text-[#f1cb83]">
                             edit_calendar
@@ -805,7 +928,7 @@ export const RemindersScreen: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleMarkDone(rem)}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
+                            className="w-[80.0938px] px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-extrabold flex items-center justify-center gap-1 cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-xs">check</span>
                             <span>انجام شد</span>
@@ -905,162 +1028,22 @@ export const RemindersScreen: React.FC = () => {
         </div>
       </main>
 
-      {/* New Reminder Modal */}
-      {isNewModalOpen && (
-        <div
-          onClick={() => setIsNewModalOpen(false)}
-          className="fixed inset-0 z-50 bg-[#050a16]/80 backdrop-blur-xl flex items-end sm:items-center justify-center p-4"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 bg-[#0c1326]/95 border border-[#f1cb83]/40 shadow-2xl space-y-3.5"
-          >
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-sm font-black text-white flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[#f1cb83]">add_alert</span>
-                ثبت یادآور و آلارم جدید
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsNewModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-200 mb-1">
-                  عنوان یادآور <span className="text-[#f1cb83]">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="مثال: تماس با امیرحسین رضایی جهت بازدید زمین کلارآباد"
-                  className="w-full glass-input rounded-xl px-3 py-2.5 text-xs text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-200 mb-1">توضیحات</label>
-                <textarea
-                  rows={2}
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="جزئیات تماس، مبلغ چک یا آدرس قرار بازدید..."
-                  className="w-full glass-input rounded-xl p-2.5 text-xs text-white resize-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">تاریخ شمسی</label>
-                  <button
-                    type="button"
-                    onClick={() => setIsNewDatePickerOpen(true)}
-                    className="w-full glass-input rounded-xl px-3 py-2.5 flex items-center justify-between text-xs text-white font-bold cursor-pointer"
-                  >
-                    <span>{toPersianDigits(newDate)}</span>
-                    <span className="material-symbols-outlined text-[#f1cb83] text-base">
-                      calendar_month
-                    </span>
-                  </button>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">ساعت آلارم</label>
-                  <input
-                    type="time"
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">دسته‌بندی</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value as ReminderCategory)}
-                    className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
-                  >
-                    <option value="phone" className="bg-[#080f20]">
-                      تماس تلفنی
-                    </option>
-                    <option value="visit" className="bg-[#080f20]">
-                      بازدید حضوری
-                    </option>
-                    <option value="finance" className="bg-[#080f20]">
-                      چک و قرارداد
-                    </option>
-                    <option value="inquiry" className="bg-[#080f20]">
-                      استعلام ثبتی
-                    </option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-200 mb-1">سطح اولویت</label>
-                  <select
-                    value={newPriority}
-                    onChange={(e) => setNewPriority(e.target.value as typeof newPriority)}
-                    className="w-full glass-input rounded-xl px-3 py-2 text-xs text-[#f1cb83] font-bold"
-                  >
-                    <option value="urgent" className="bg-[#080f20]">
-                      فوری
-                    </option>
-                    <option value="normal" className="bg-[#080f20]">
-                      مهم / عادی
-                    </option>
-                    <option value="low" className="bg-[#080f20]">
-                      کم‌اولویت
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-200 mb-1">
-                  اتصال به پرونده متقاضی (اختیاری)
-                </label>
-                <select
-                  value={newLinkedApplicantId}
-                  onChange={(e) => setNewLinkedApplicantId(e.target.value)}
-                  className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
-                >
-                  <option value="" className="bg-[#080f20]">
-                    بدون اتصال به متقاضی
-                  </option>
-                  {applicants.map((a) => (
-                    <option key={a.id} value={a.id} className="bg-[#080f20]">
-                      {a.name} ({a.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleSaveManualReminder}
-                className="flex-1 gold-pill-btn py-3 rounded-xl text-xs font-extrabold cursor-pointer"
-              >
-                ثبت و فعال‌سازی یادآور
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsNewModalOpen(false)}
-                className="px-4 py-3 rounded-xl bg-white/10 text-xs font-bold text-slate-300 cursor-pointer"
-              >
-                انصراف
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Smart Voice Reminder Bottom Sheet (Reference 1 & Reference 2) */}
+      <SmartVoiceReminderSheet
+        isOpen={isVoiceSheetOpen}
+        editingReminder={editingReminder}
+        preselectedPropertyId={preselectedPropertyId}
+        preselectedApplicantId={preselectedApplicantId}
+        preselectedCollaboratorId={preselectedCollaboratorId}
+        initialTranscript={sheetInitialTranscript}
+        onClose={() => {
+          setIsVoiceSheetOpen(false);
+          setEditingReminder(null);
+          if (location.pathname === '/reminders/new' || location.search) {
+            navigate('/reminders', { replace: true });
+          }
+        }}
+      />
 
       {isFullCalendarOpen && (
         <JalaliDatePickerModal
@@ -1069,8 +1052,7 @@ export const RemindersScreen: React.FC = () => {
           onClose={() => setIsFullCalendarOpen(false)}
           onSelect={(d) => {
             setIsFullCalendarOpen(false);
-            setIsNewModalOpen(true);
-            setNewDate(d);
+            openNewSmartVoiceSheet(`یادآور برای تاریخ ${d}`);
           }}
         />
       )}
@@ -1081,18 +1063,6 @@ export const RemindersScreen: React.FC = () => {
           title="تغییر تاریخ یادآور"
           onClose={() => setRescheduleReminder(null)}
           onSelect={(d) => handleReschedule(d)}
-        />
-      )}
-
-      {isNewDatePickerOpen && (
-        <JalaliDatePickerModal
-          initialValue={newDate}
-          title="انتخاب تاریخ یادآور جدید"
-          onClose={() => setIsNewDatePickerOpen(false)}
-          onSelect={(d) => {
-            setNewDate(d);
-            setIsNewDatePickerOpen(false);
-          }}
         />
       )}
     </div>

@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
-import { KelidLogoIcon } from '../components/Layout';
+import { AmbientBackground, BottomNavAndQuickMenu, KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { CreditTier } from '../config';
 import {
+  deleteCollaborator,
   generateNextCode,
   registerPlaceUsage,
   saveCollaborator,
@@ -32,7 +34,8 @@ const SPECIALTY_OPTIONS = [
 export const CollaboratorFormScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { snapshot, refreshSnapshot, showToast, askPermission } = useApp();
+  const { snapshot, refreshSnapshot, showToast, askPermission, askConfirm, currentUser } = useApp();
+  const isViewer = currentUser.role === 'بیننده';
 
   const isEdit = Boolean(id);
   const [autoCode, setAutoCode] = useState('H-001');
@@ -70,7 +73,13 @@ export const CollaboratorFormScreen: React.FC = () => {
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [submittedOnce, setSubmittedOnce] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
   const voiceRef = useRef<VoiceSessionController | null>(null);
+  const nameFieldRef = useRef<HTMLDivElement | null>(null);
+  const agencyFieldRef = useRef<HTMLDivElement | null>(null);
+  const phoneFieldRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isEdit && id && snapshot) {
@@ -159,13 +168,33 @@ export const CollaboratorFormScreen: React.FC = () => {
     }
   };
 
-  const handleSave = async (createPropertyNext = false) => {
-    if (!fullName.trim() || !agencyName.trim()) {
-      showToast('لطفاً نام همکار و نام دفتر املاک را وارد نمایید.', 'error');
-      return;
+  const validationErrors = useMemo(() => {
+    const errors: { fullName?: string; agencyName?: string; phone?: string } = {};
+    if (!fullName.trim()) {
+      errors.fullName = 'وارد کردن نام و نام خانوادگی همکار الزامی است.';
+    }
+    if (!agencyName.trim()) {
+      errors.agencyName = 'وارد کردن نام دفتر املاک یا مجموعه الزامی است.';
     }
     if (!validateIranianMobile(phone)) {
-      showToast('شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود.', 'error');
+      errors.phone = 'شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود.';
+    }
+    return errors;
+  }, [fullName, agencyName, phone]);
+
+  const handleSave = async (createPropertyNext = false) => {
+    if (isViewer) return;
+    setSubmittedOnce(true);
+
+    if (validationErrors.fullName || validationErrors.agencyName || validationErrors.phone) {
+      showToast('لطفاً فیلدهای ضروری مشخص‌شده را تکمیل نمایید.', 'error');
+      if (validationErrors.fullName) {
+        nameFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.agencyName) {
+        agencyFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (validationErrors.phone) {
+        phoneFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
 
@@ -227,9 +256,11 @@ export const CollaboratorFormScreen: React.FC = () => {
         });
       }
 
+      setIsDirty(false);
       await refreshSnapshot();
       showToast(`پرونده همکار «${saved.name}» با موفقیت ذخیره شد.`, 'success');
 
+      markReturningToList();
       runWithViewTransition(() => {
         if (createPropertyNext) {
           navigate(`/properties/new?collaboratorId=${encodeURIComponent(saved.id)}`);
@@ -242,18 +273,46 @@ export const CollaboratorFormScreen: React.FC = () => {
     }
   };
 
+  const handleDeleteCollaborator = async () => {
+    if (!isEdit || !id || isViewer) return;
+    const confirmed = await askConfirm({
+      title: `حذف همکار (${autoCode})`,
+      message: 'آیا مطمئن هستید؟ این عمل قابل بازگشت نیست.',
+      confirmLabel: 'حذف همکار',
+      danger: true,
+    });
+    if (!confirmed) return;
+    await deleteCollaborator(id);
+    setIsDirty(false);
+    await refreshSnapshot();
+    showToast(`پرونده همکار ${autoCode} حذف شد`, 'info');
+    markReturningToList();
+    runWithViewTransition(() => navigate('/collaborators'));
+  };
+
+  const handleCloseWithGuard = async () => {
+    if (isDirty) {
+      const discard = await askConfirm({
+        title: 'خروج بدون ذخیره تغییرات؟',
+        message: 'اطلاعات واردشده در فرم همکار هنوز ذخیره نشده‌اند. آیا از خروج اطمینان دارید؟',
+        confirmLabel: 'بله، خروج',
+        danger: true,
+      });
+      if (!discard) return;
+    }
+    markReturningToList();
+    runWithViewTransition(() => navigate('/collaborators'));
+  };
+
   return (
-    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-40">
+    <div className="relative z-10 max-w-md mx-auto min-h-screen flex flex-col pb-48 bg-transparent">
       {/* Sticky Header (Exact match to Image 16.html) */}
-      <header className="sticky top-0 z-30 bg-[#050b18]/85 backdrop-blur-xl border-b border-white/10 px-4 pt-5 pb-3.5">
+      <header className="sticky top-0 z-30 bg-[#080d1a]/60 backdrop-blur-2xl border-b border-white/10 px-4 pt-5 pb-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                if (isEdit) markReturningToList();
-                runWithViewTransition(() => navigate(isEdit ? (-1 as any) : '/collaborators'));
-              }}
+              onClick={handleCloseWithGuard}
               className="w-10 h-10 rounded-xl glass-card flex items-center justify-center border border-white/15 text-white hover:border-[#f1cb83]/50 active:scale-95 transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-xl">arrow_forward</span>
@@ -320,39 +379,63 @@ export const CollaboratorFormScreen: React.FC = () => {
           </div>
 
           <div className="space-y-3.5">
-            <div>
+            <div ref={nameFieldRef}>
               <label className="block text-xs font-bold text-slate-200 mb-1.5">
                 نام و نام خانوادگی همکار <span className="text-[#f1cb83]">*</span>
               </label>
-              <div className="glass-input rounded-xl px-3 py-2.5 flex items-center gap-2">
+              <div
+                className={`glass-input rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+                  submittedOnce && validationErrors.fullName ? 'border border-red-500' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined text-slate-400 text-lg">person</span>
                 <input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="مثال: مهندس کامران نادری"
                   className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-semibold"
                 />
               </div>
+              {submittedOnce && validationErrors.fullName && (
+                <p className="text-[11px] text-red-400 font-semibold mt-1">
+                  {validationErrors.fullName}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div ref={agencyFieldRef}>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
                   نام دفتر املاک / مجموعه <span className="text-[#f1cb83]">*</span>
                 </label>
-                <div className="glass-input rounded-xl px-3 py-2.5 flex items-center gap-2">
+                <div
+                  className={`glass-input rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+                    submittedOnce && validationErrors.agencyName ? 'border border-red-500' : ''
+                  }`}
+                >
                   <span className="material-symbols-outlined text-[#f1cb83] text-lg">
                     apartment
                   </span>
                   <input
                     type="text"
                     value={agencyName}
-                    onChange={(e) => setAgencyName(e.target.value)}
+                    onChange={(e) => {
+                      setAgencyName(e.target.value);
+                      setIsDirty(true);
+                    }}
                     placeholder="مثال: املاک بزرگ رویال"
                     className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-semibold"
                   />
                 </div>
+                {submittedOnce && validationErrors.agencyName && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    {validationErrors.agencyName}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -362,7 +445,10 @@ export const CollaboratorFormScreen: React.FC = () => {
                 <div className="glass-input rounded-xl px-3 py-2.5">
                   <select
                     value={roleType}
-                    onChange={(e) => setRoleType(e.target.value as CollaboratorRecord['role'])}
+                    onChange={(e) => {
+                      setRoleType(e.target.value as CollaboratorRecord['role']);
+                      setIsDirty(true);
+                    }}
                     className="bg-transparent border-none outline-none text-xs text-white w-full font-medium"
                   >
                     <option value="مدیر آژانس" className="bg-[#080f20]">
@@ -383,11 +469,15 @@ export const CollaboratorFormScreen: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div ref={phoneFieldRef}>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
                   شماره همراه اول (اصلی) <span className="text-[#f1cb83]">*</span>
                 </label>
-                <div className="glass-input rounded-xl px-3 py-2.5 flex items-center gap-2">
+                <div
+                  className={`glass-input rounded-xl px-3 py-2.5 flex items-center gap-2 ${
+                    submittedOnce && validationErrors.phone ? 'border border-red-500' : ''
+                  }`}
+                >
                   <span className="material-symbols-outlined text-slate-400 text-lg">
                     phone_iphone
                   </span>
@@ -395,11 +485,19 @@ export const CollaboratorFormScreen: React.FC = () => {
                     type="tel"
                     dir="ltr"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      setIsDirty(true);
+                    }}
                     placeholder="09111942233"
                     className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-semibold text-left"
                   />
                 </div>
+                {submittedOnce && validationErrors.phone && (
+                  <p className="text-[11px] text-red-400 font-semibold mt-1">
+                    {validationErrors.phone}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-200 mb-1.5">
@@ -831,7 +929,10 @@ export const CollaboratorFormScreen: React.FC = () => {
                 <textarea
                   rows={3}
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) => {
+                    setNotes(e.target.value);
+                    setIsDirty(true);
+                  }}
                   placeholder="توضیحات درباره نحوه تعامل، فایل‌های اختصاصی که دارد، میزان صداقت در اعلام قیمت مالک..."
                   className="bg-transparent border-none outline-none text-xs text-white placeholder-slate-400 w-full font-medium resize-none leading-relaxed"
                 />
@@ -840,14 +941,16 @@ export const CollaboratorFormScreen: React.FC = () => {
                     <span className="material-symbols-outlined text-xs text-[#f1cb83]">lock</span>
                     قابل مشاهده فقط برای مدیر سیستم
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleVoiceFill}
-                    className="flex items-center gap-1 text-[11px] text-[#f1cb83] font-bold hover:underline cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-sm">mic</span>
-                    <span>ضبط یادداشت صوتی</span>
-                  </button>
+                  <VoiceMicButton
+                    currentValue={notes}
+                    append={true}
+                    variant="gold-pill"
+                    idleLabel="تایپ صوتی یادداشت"
+                    onTextChange={(txt) => {
+                      setNotes(txt);
+                      setIsDirty(true);
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -855,8 +958,8 @@ export const CollaboratorFormScreen: React.FC = () => {
         </section>
       </main>
 
-      {/* Fixed Bottom Action Bar (Exact match to Image 16.html) */}
-      <div className="fixed bottom-16 left-0 right-0 z-40 px-4 pb-3 pt-2 bg-gradient-to-t from-[#050b18] via-[#050b18]/95 to-transparent">
+      {/* Fixed Bottom Action Bar (Above BottomNav with safe-area support) */}
+      <div className="fixed bottom-[76px] left-0 right-0 z-50 px-4 pb-2 pt-2 bg-gradient-to-t from-[#050b18] via-[#050b18]/95 to-transparent">
         <div className="max-w-md mx-auto glass-card rounded-2xl p-2.5 border border-[#f1cb83]/40 shadow-2xl space-y-2">
           <button
             type="button"
@@ -868,18 +971,40 @@ export const CollaboratorFormScreen: React.FC = () => {
             <span>{isEdit ? 'بروزرسانی پرونده همکار' : 'ثبت و ذخیره پرونده همکار'}</span>
           </button>
           <div className="grid grid-cols-3 gap-2">
+            {isEdit && !isViewer ? (
+              <button
+                type="button"
+                onClick={handleDeleteCollaborator}
+                className="col-span-1 py-2.5 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-extrabold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">delete</span>
+                <span>حذف همکار</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSave(true)}
+                className="col-span-2 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">add_home</span>
+                <span>ذخیره و ثبت اولین ملک برای این همکار</span>
+              </button>
+            )}
+            {isEdit && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSave(true)}
+                className="col-span-1 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-[11px] font-extrabold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">add_home</span>
+                <span>ثبت ملک</span>
+              </button>
+            )}
             <button
               type="button"
-              disabled={saving}
-              onClick={() => handleSave(true)}
-              className="col-span-2 py-2.5 rounded-xl bg-[#f1cb83]/15 border border-[#f1cb83]/50 text-[#f1cb83] text-xs font-extrabold flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">add_home</span>
-              <span>ذخیره و ثبت اولین ملک برای این همکار</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => runWithViewTransition(() => navigate('/collaborators'))}
+              onClick={handleCloseWithGuard}
               className="col-span-1 py-2.5 rounded-xl bg-white/5 border border-white/15 text-slate-300 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
             >
               <span className="material-symbols-outlined text-base">close</span>
@@ -896,6 +1021,7 @@ export const CollaboratorFormScreen: React.FC = () => {
           onClose={() => setIsDatePickerOpen(false)}
           onSelect={(d) => {
             setNextFollowUpDate(d);
+            setIsDirty(true);
             setIsDatePickerOpen(false);
           }}
         />

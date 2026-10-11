@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { JalaliDatePickerModal } from '../components/JalaliDatePickerModal';
 import { KelidLogoIcon } from '../components/Layout';
+import { VoiceMicButton } from '../components/VoiceMicButton';
 import { saveApplicant, softDeleteEntity } from '../db/repositories';
 import { ApplicantRecord, PropertyRecord } from '../db/schema';
 import { useApp } from '../hooks/useAppContext';
@@ -253,16 +254,15 @@ export const ApplicantsListScreen: React.FC = () => {
                 <span className="material-symbols-outlined text-base">close</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleVoiceSearch}
+            <VoiceMicButton
+              currentValue={applicantFilters.searchQuery}
+              append={false}
+              variant="inline-icon"
               title="جستجوی صوتی"
-              className={`transition-colors flex items-center justify-center ${
-                isVoiceListening ? 'text-rose-400 animate-pulse' : 'text-slate-400 hover:text-[#f1cb83]'
-              }`}
-            >
-              <span className="material-symbols-outlined text-lg">mic</span>
-            </button>
+              onTextChange={(txt) =>
+                setApplicantFilters((prev) => ({ ...prev, searchQuery: txt }))
+              }
+            />
             <span className="w-[1px] h-4 bg-white/15 mx-0.5" />
             <button
               type="button"
@@ -627,7 +627,7 @@ export const ApplicantsListScreen: React.FC = () => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 bg-[#0c1326]/95 border border-[#f1cb83]/35 shadow-2xl max-h-[82vh] flex flex-col"
+            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 crystal-glass border border-[#f1cb83]/35 shadow-2xl max-h-[82vh] flex flex-col"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
               <div>
@@ -709,7 +709,7 @@ export const ApplicantsListScreen: React.FC = () => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 bg-[#0c1326]/95 border border-[#f1cb83]/35 shadow-2xl space-y-3.5"
+            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 crystal-glass border border-[#f1cb83]/35 shadow-2xl space-y-3.5"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div>
@@ -791,7 +791,7 @@ export const ApplicantsListScreen: React.FC = () => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 bg-[#0c1326]/95 border border-[#f1cb83]/35 shadow-2xl space-y-4"
+            className="sheet-enter-up w-full max-w-md rounded-3xl p-5 crystal-glass border border-[#f1cb83]/35 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h3 className="text-sm font-black text-white flex items-center gap-1.5">
